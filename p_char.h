@@ -1,7 +1,7 @@
 // ************************ Définitions ********************************
 #define DEV_MAJOR 	0
 #define DEV_MINOR	1
-#define MOD_NAME	"pchar"
+#define MOD_NAME	"p_char"
 
 #define READWRITE_BUFSIZE 16
 #define DEFAULT_BUFSIZE 256
