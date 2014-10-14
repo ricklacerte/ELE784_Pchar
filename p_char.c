@@ -33,6 +33,14 @@ struct file_operations Buf_fops ={
     .unlocked_ioctl =   buf_ioctl,
 };
 
+char* WriteBuf;
+char* ReadBuf;
+
+struct semaphore    SemBDev;
+struct semaphore	SemWriteBuf;
+struct semaphore	SemReadBuf;
+
+
 //**************************************** PILOTE ********************************************
 static int __init buf_init(void){
 	
@@ -42,6 +50,10 @@ static int __init buf_init(void){
 	BDev.mclass=class_create(THIS_MODULE, MOD_NAME);
 	device_create(BDev.mclass, NULL, BDev.dev, NULL, MOD_NAME);
 	
+//initialisation des verrous
+	sema_init(&SemBDev,1);
+	sema_init(&SemWriteBuf,1);
+	sema_init(&SemReadBuf,1);
 
 ///initialisation du BDev
 	cdev_init(&BDev.cdev, &Buf_fops);
@@ -58,6 +70,14 @@ static int __init buf_init(void){
     Buffer.BufEmpty=1;
     Buffer.BufSize=DEFAULT_BUFSIZE;
 	Buffer.Buffer=(unsigned short *)kmalloc(DEFAULT_BUFSIZE*sizeof(char),__GFP_NORETRY);
+//valider le malloc
+
+/// initialisation des buffers lecture et ecriture
+
+	WriteBuf=(char*) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
+	ReadBuf=(char*) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
+//valider le malloc
+	
 
 
 	cdev_add(&BDev.cdev, BDev.dev, 1);
@@ -68,6 +88,8 @@ static int __init buf_init(void){
 static void __exit buf_exit(void){
 // Destruction du Buffer Circulaire
 	kfree(Buffer.Buffer);
+	kfree(WriteBuf);
+	kfree(ReadBuf);
 
 //Désallocation du Device
 	unregister_chrdev_region(BDev.dev,1);
@@ -83,40 +105,37 @@ int buf_open(struct inode *inode, struct file *flip){
 
 	struct Buf_Dev *BDev;
 	BDev = container_of(inode->i_cdev, struct Buf_Dev, cdev);
+
+
+	// Vérifie le MODE du USER
+	switch (flip->f_flags){
+		case O_RDONLY:
+			BDev->numReader ++;
+			break;
+
+		case O_WRONLY:
+			if (!BDev->numWriter)
+				BDev->numWriter ++;
+			else
+				return -ENOTTY;
+			break;				
+
+		case O_RDWR:
+			//*** à définir ****
+			if (!BDev->numWriter){
+				BDev->numWriter ++;
+				BDev->numReader ++;	
+			}			
+			else
+				return -ENOTTY;
+			break;
 	
-	// vérifie si il y a un ÉCRIVAIN
-	if (!BDev->numWriter){ 
-
-		// Vérifie le MODE du USER 
-		switch (flip->f_flags){
-			case O_RDONLY:
-				BDev->numReader ++;
-				break;
-
-			case O_WRONLY:
-				if (!BDev->numReader)
-					BDev->numWriter ++;
-				else
-					return -ENOTTY;
-				break;				
-
-			case O_RDWR:
-				//*** à définir ****
-				if (!BDev->numReader)
-					BDev->numWriter ++;
-				else
-					return -ENOTTY;
-				break;
-		
-			default:
-				// *** à définir (code erreur) ***
-				return -ENOTSUPP;				
-		}
-		flip->private_data=BDev;
-		return 0;
+		default:
+			// *** à définir (code erreur) ***
+			return -ENOTSUPP;				
 	}
-	else
-	  	return -ENOTTY;
+	flip->private_data=BDev;
+	return 0;
 }
 
 int buf_release(struct inode *inode, struct file *flip){
@@ -145,11 +164,26 @@ int buf_release(struct inode *inode, struct file *flip){
 }
 
 ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_ops){
-	
+ 	//verifier le mode bloquant ou non (flag flip->f_flags)
+	//vérifier Buffer circulaire est dispo (en premier)
+	//vérifer ReadBuf est dispo en AYANT le Buffer circulaire
+	// Outbuf
+	// Relacher Buffer circulaire
+	// copy_to_user
+	//relache ReadBuf
+	//retourne à l'usager nombre de byte lue
+
 	return 0;
 }
 ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff_t *f_ops){
-	
+//verifier le mode bloquant ou non (flag flip->f_flags)
+
+	//vérifier Buffer WriteBuf est dispo (sema)
+	//copy_from_user : vérifier le succès + message a retourner au user
+	//Vérifer Buffer circulaire Sema 
+	// BufIn (loop)
+	//retourne à l'usager nombre de byte écrit
+			
 	return 0;
 }
 

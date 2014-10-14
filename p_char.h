@@ -5,7 +5,7 @@
 
 #define READWRITE_BUFSIZE 16
 #define DEFAULT_BUFSIZE 256
-#define INIT_BUFSIZE 256
+#define DEFAULT_RWSIZE 16
 
 
 // ************************ Variables ********************************
