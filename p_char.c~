@@ -66,15 +66,15 @@ static int __init buf_init(void){
 }
 
 static void __exit buf_exit(void){
-// Destruction du Buffer Circulaire
-	kfree(Buffer.Buffer);
-
-//Désallocation du Device
+	
 	unregister_chrdev_region(BDev.dev,1);
 	cdev_del(&BDev.cdev);
 	device_destroy(BDev.mclass, BDev.dev);
 	class_destroy(BDev.mclass);
 	unregister_chrdev_region(BDev.dev, DEV_MAJOR);
+
+	kfree(Buffer.Buffer);
+	printk(KERN_ALERT "bye");
 
 	
 }
