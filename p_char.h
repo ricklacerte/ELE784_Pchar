@@ -8,7 +8,7 @@
 #define DEFAULT_RWSIZE 16
 
 
-// ************************ Variables ********************************
+// ************************ Structures ********************************
 struct BufStruct {
     unsigned int    InIdx;
     unsigned int    OutIdx;
@@ -21,7 +21,7 @@ struct BufStruct {
 struct Buf_Dev {
     unsigned short      *ReadBuf;
     unsigned short      *WriteBuf;
-    struct semaphore    SemBuf;
+    //struct semaphore    SemBuf; // if(Calvin = d'accord) sort la semaphore 
     unsigned short      numWriter;
     unsigned short      numReader;
     struct class		*mclass;

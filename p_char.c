@@ -33,9 +33,7 @@ struct file_operations Buf_fops ={
     .unlocked_ioctl =   buf_ioctl,
 };
 
-char* WriteBuf;
-char* ReadBuf;
-
+struct semaphore    SemBuf;
 struct semaphore    SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
@@ -51,6 +49,7 @@ static int __init buf_init(void){
 	device_create(BDev.mclass, NULL, BDev.dev, NULL, MOD_NAME);
 	
 //initialisation des verrous
+	sema_init(&SemBuf,1);
 	sema_init(&SemBDev,1);
 	sema_init(&SemWriteBuf,1);
 	sema_init(&SemReadBuf,1);
@@ -59,7 +58,7 @@ static int __init buf_init(void){
 	cdev_init(&BDev.cdev, &Buf_fops);
 	BDev.cdev.owner = THIS_MODULE;
 	BDev.cdev.ops = &Buf_fops;
-	sema_init(&BDev.SemBuf,1);
+	//sema_init(&BDev.SemBuf,1);
 	BDev.numWriter=0;
 	BDev.numReader=0;
 
@@ -73,12 +72,9 @@ static int __init buf_init(void){
 //valider le malloc
 
 /// initialisation des buffers lecture et ecriture
-
-	WriteBuf=(char*) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
-	ReadBuf=(char*) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
-//valider le malloc
-	
-
+	BDev.WriteBuf=(unsigned short *) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
+	BDev.ReadBuf=(unsigned short *) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
+	//valider le malloc
 
 	cdev_add(&BDev.cdev, BDev.dev, 1);
 	
@@ -88,8 +84,8 @@ static int __init buf_init(void){
 static void __exit buf_exit(void){
 // Destruction du Buffer Circulaire
 	kfree(Buffer.Buffer);
-	kfree(WriteBuf);
-	kfree(ReadBuf);
+	kfree(BDev.WriteBuf);
+	kfree(BDev.ReadBuf);
 
 //Désallocation du Device
 	unregister_chrdev_region(BDev.dev,1);
@@ -102,13 +98,18 @@ static void __exit buf_exit(void){
 }
 
 int buf_open(struct inode *inode, struct file *flip){
-
+	
 	struct Buf_Dev *BDev;
-	BDev = container_of(inode->i_cdev, struct Buf_Dev, cdev);
+	
+	BDev = container_of(inode->i_cdev, struct Buf_Dev, cdev); // Calvin help!!!
 
-
+	// Vérifier protection struct BDev...
+	down_interruptible(&SemBDev);
+	
+	
 	// Vérifie le MODE du USER
-	switch (flip->f_flags){
+	
+	switch (flip->f_flags & O_ACCMODE){ // voir library asm/fcntl.h (faire un mask sur les acces)
 		case O_RDONLY:
 			BDev->numReader ++;
 			break;
@@ -116,55 +117,70 @@ int buf_open(struct inode *inode, struct file *flip){
 		case O_WRONLY:
 			if (!BDev->numWriter)
 				BDev->numWriter ++;
-			else
+			else{
+				up(&SemBDev);
 				return -ENOTTY;
+			}
 			break;				
 
 		case O_RDWR:
-			//*** à définir ****
 			if (!BDev->numWriter){
 				BDev->numWriter ++;
 				BDev->numReader ++;	
 			}			
-			else
+			else{
+				up(&SemBDev);
 				return -ENOTTY;
+			}
 			break;
 	
 		default:
-			// *** à définir (code erreur) ***
+			up(&SemBDev);
 			return -ENOTSUPP;				
 	}
 	flip->private_data=BDev;
+	up(&SemBDev);
+
 	return 0;
 }
 
 int buf_release(struct inode *inode, struct file *flip){
 	
-	struct Buf_Dev *BDev;
-
-	switch (flip->f_flags){
+	
+	switch (flip->f_flags & O_ACCMODE){
+	down_interruptible(&SemBDev); // à valider avec Calvin Machine!
 			case O_RDONLY:
-				BDev->numReader --;
+				BDev.numReader --;
 				break;
 
 			case O_WRONLY:
-				BDev->numWriter --;
+				BDev.numWriter --;
 				break;				
 
 			case O_RDWR:
-				//*** à définir ****
-				BDev->numWriter --;
+				BDev.numWriter --;
+				BDev.numReader --;
 				break;
 	
 			default:
-				// *** théoriquement, impossible ***
+				up(&SemBDev);
 				return -ENOTSUPP;				
 	}
+	up(&SemBDev);
 	return 0;
 }
 
 ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_ops){
  	//verifier le mode bloquant ou non (flag flip->f_flags)
+
+	if (flip->f_flags & O_NONBLOCK){
+		if(down_trylock(&SemBuf)) 
+			return -EAGAIN;
+		}
+	else
+		down_interruptible(&SemBuf);
+	
+	
 	//vérifier Buffer circulaire est dispo (en premier)
 	//vérifer ReadBuf est dispo en AYANT le Buffer circulaire
 	// Outbuf
@@ -176,7 +192,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	return 0;
 }
 ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff_t *f_ops){
-//verifier le mode bloquant ou non (flag flip->f_flags)
+	//verifier le mode bloquant ou non (flag flip->f_flags)
 
 	//vérifier Buffer WriteBuf est dispo (sema)
 	//copy_from_user : vérifier le succès + message a retourner au user
