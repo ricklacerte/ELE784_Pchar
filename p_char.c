@@ -33,14 +33,26 @@ struct file_operations Buf_fops ={
     .unlocked_ioctl =   buf_ioctl,
 };
 
+//déclaration des semaphores
+
 struct semaphore    SemBuf;
 struct semaphore    SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
+struct semaphore	SemSignalRead; //pour envoyer un signal données disponibles aux lecteurs
+struct semaphore	SemSignalWrite;//pour envoyer un signal données lu on peut continuer à écrire
+
+// déclaration des flags
+
+atomic_t wait_data_write = ATOMIC_INIT(0);
+atomic_t wait_data_read = ATOMIC_INIT(0);
+
 
 
 //**************************************** PILOTE ********************************************
 static int __init buf_init(void){
+	
+	printk("Buffer_circulaire : Begin init\n");
 	
 	//printk(KERN_ALERT "init");
 	//printk(KERN_ALERT "Hello, world\n");
@@ -48,12 +60,14 @@ static int __init buf_init(void){
 	BDev.mclass=class_create(THIS_MODULE, MOD_NAME);
 	device_create(BDev.mclass, NULL, BDev.dev, NULL, MOD_NAME);
 	
-//initialisation des verrous
+///initialisation des verrous
 	sema_init(&SemBuf,1);
 	sema_init(&SemBDev,1);
 	sema_init(&SemWriteBuf,1);
 	sema_init(&SemReadBuf,1);
-
+	sema_init(&SemSignalRead,0);
+	sema_init(&SemSignalWrite,0);
+	
 ///initialisation du BDev
 	cdev_init(&BDev.cdev, &Buf_fops);
 	BDev.cdev.owner = THIS_MODULE;
@@ -72,17 +86,20 @@ static int __init buf_init(void){
 //valider le malloc
 
 /// initialisation des buffers lecture et ecriture
-	BDev.WriteBuf=(unsigned short *) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
-	BDev.ReadBuf=(unsigned short *) kmalloc(DEFAULT_RWSIZE*sizeof(char),__GFP_NORETRY);
+	BDev.WriteBuf=(unsigned short *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(char),__GFP_NORETRY);
+	BDev.ReadBuf=(unsigned short *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(char),__GFP_NORETRY);
 	//valider le malloc
 
 	cdev_add(&BDev.cdev, BDev.dev, 1);
+	
+	printk("Buffer_circulaire : end init\n");
 	
 	return 0;
 }
 
 static void __exit buf_exit(void){
 // Destruction du Buffer Circulaire
+	printk("Buffer_circulaire : Begin exit\n");
 	kfree(Buffer.Buffer);
 	kfree(BDev.WriteBuf);
 	kfree(BDev.ReadBuf);
@@ -94,13 +111,15 @@ static void __exit buf_exit(void){
 	class_destroy(BDev.mclass);
 	unregister_chrdev_region(BDev.dev, DEV_MAJOR);
 
-	
+	printk("Buffer_circulaire : end exit\n");
 }
 
 int buf_open(struct inode *inode, struct file *flip){
 	
 	struct Buf_Dev *BDev;
 	
+	printk("Buffer_circulaire : Begin open\n");
+
 	BDev = container_of(inode->i_cdev, struct Buf_Dev, cdev); // Calvin help!!!
 
 	// Vérifier protection struct BDev...
@@ -112,25 +131,29 @@ int buf_open(struct inode *inode, struct file *flip){
 	switch (flip->f_flags & O_ACCMODE){ // voir library asm/fcntl.h (faire un mask sur les acces)
 		case O_RDONLY:
 			BDev->numReader ++;
+			printk("Buffer_circulaire open : as RDONLY\n");
 			break;
 
 		case O_WRONLY:
-			if (!BDev->numWriter)
+			if (!BDev->numWriter){
 				BDev->numWriter ++;
+				printk("Buffer_circulaire open : as WRONLY\n");
+				}
 			else{
 				up(&SemBDev);
-				return -ENOTTY;
+				return -ENOTTY;//plutot EBUSY non??
 			}
 			break;				
 
 		case O_RDWR:
 			if (!BDev->numWriter){
 				BDev->numWriter ++;
-				BDev->numReader ++;	
+				BDev->numReader ++;
+				printk("Buffer_circulaire open : as RDWR\n");	
 			}			
 			else{
 				up(&SemBDev);
-				return -ENOTTY;
+				return -ENOTTY; //EBUSY NON?
 			}
 			break;
 	
@@ -140,12 +163,15 @@ int buf_open(struct inode *inode, struct file *flip){
 	}
 	flip->private_data=BDev;
 	up(&SemBDev);
-
+	
+	printk("Buffer_circulaire : end open\n");
+	
 	return 0;
 }
 
 int buf_release(struct inode *inode, struct file *flip){
 	
+	printk("Buffer_circulaire : Begin release\n");
 	
 	switch (flip->f_flags & O_ACCMODE){
 	down_interruptible(&SemBDev); // à valider avec Calvin Machine!
@@ -167,40 +193,165 @@ int buf_release(struct inode *inode, struct file *flip){
 				return -ENOTSUPP;				
 	}
 	up(&SemBDev);
+	
+	printk("Buffer_circulaire : end release\n");
+	
 	return 0;
 }
 
 ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_ops){
+ 	
+ 	
+ 	int cpt=0;
+ 	
+ 	printk("Buffer_circulaire : Begin read\n");
+
+ 	 
+	count=count/sizeof(char); //on veut un nombre de char à lire pas un poids
+	
+	if(count>atomic_read(&DEFAULT_RWSIZE))// vérifie l'overload
+		count=atomic_read(&DEFAULT_RWSIZE);
+	
  	//verifier le mode bloquant ou non (flag flip->f_flags)
 
-	if (flip->f_flags & O_NONBLOCK){
-		if(down_trylock(&SemBuf)) 
-			return -EAGAIN;
-		}
-	else
-		down_interruptible(&SemBuf);
+
+	// abandon du try lock suite à la remarque du prof
+	//~ if (bool_nonblock){
+			//~ //vérifier Buffer circulaire est dispo (en premier)
+		//~ if(down_trylock(&SemBuf)) 
+			//~ return -EAGAIN;
+		//~ }
+	//~ else
+		//~ down_interruptible(&SemBuf);
+	
+
+	down_interruptible(&SemReadBuf);
 	
 	
-	//vérifier Buffer circulaire est dispo (en premier)
-	//vérifer ReadBuf est dispo en AYANT le Buffer circulaire
+	down_interruptible(&SemBuf);
+	//~ if(bool_nonblock){
+			//~ //vérifer ReadBuf est dispo en AYANT le Buffer circulaire
+//~ 
+		//~ if(down_trylock(&SemReadBuf)) 
+			//~ return -EAGAIN;
+	//~ }
+	//~ else
+		//~ down_interruptible(&SemReadBuf);
+		
+	// à ce moment on possède la sema du buffer circulaire et du buffer de lecture
+	
+	while(cpt<count)
+	{
+		if(BufOut(&Buffer,&(BDev.ReadBuf[cpt])))//renvoie -1 sur buffer vide
+		{
+			
+			if(flip->f_flags & O_NONBLOCK)
+				break;
+			else //on attend d'avoir des données
+				{
+					up(&SemBuf); //relache le buffer circulaire
+					
+					if(atomic_read(&wait_data_read)>0 && cpt>0){
+						up(&SemSignalRead);//envoi du signal "données disponibles"
+					}//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
+
+					atomic_inc(&wait_data_write);//incrémentation du flag
+					down_interruptible(&SemSignalWrite);//on attend le signal de la fonction buf_write
+					atomic_set(&wait_data_write,0); //reset du flag d'attente de données
+					down_interruptible(&SemBuf);
+				}
+			}
+	cpt++;	
+	}
+	up(&SemBuf);
+	//à ce niveau on possède le ReadBuf et nos données s'y trouve
+	if(atomic_read(&wait_data_read)>0 && cpt>0){
+		up(&SemSignalRead);//envoi du signal "données disponibles"
+	}//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
+
+	
+	cpt-=copy_to_user(ubuf,&(BDev.ReadBuf),cpt);
+	//unsigned long copy_to_user (void __user * to, const void * from, unsigned long n);
+		
+	up(&SemReadBuf);
+	
+	printk("Buffer_circulaire : end read\n");
+	
+	return cpt;
+
 	// Outbuf
 	// Relacher Buffer circulaire
 	// copy_to_user
 	//relache ReadBuf
 	//retourne à l'usager nombre de byte lue
-
-	return 0;
 }
 ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff_t *f_ops){
+	
+	int cpt=0;
+	
+
 	//verifier le mode bloquant ou non (flag flip->f_flags)
 
+
+	printk("Buffer_circulaire : Begin write\n");
+	count=count/sizeof(char); //idem que pour buf_read on veut un nombre de byte pas un poids
+	
+	// vérifie l'overload à confirmer avec CALVIN!!!!!!!!!!!!!
+	if(count>atomic_read(&DEFAULT_RWSIZE))
+		count=atomic_read(&DEFAULT_RWSIZE);	
+	
+	down_interruptible(&SemWriteBuf);
+	
+	count-=copy_from_user(&(BDev.WriteBuf),ubuf,count);
+	///unsigned long copy_from_user (void * to, const void __user * from, unsigned long n);
+	
+	down_interruptible(&SemBuf);
+	
+	while(cpt<count)
+	{
+		if(BufIn(&Buffer,&(BDev.WriteBuf[cpt])))//return -1 si Buffer Full
+		{
+			if(flip->f_flags & O_NONBLOCK)
+				break;
+			else
+			{
+				up(&SemBuf);
+				
+				if(atomic_read(&wait_data_write)>0 && cpt>0){
+					up(&SemSignalWrite);//envoi du signal "données disponibles"
+				}//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
+				
+				
+				atomic_inc(&wait_data_read);//incrémentation du flag
+				down_interruptible(&SemSignalRead);//on attend le signal de la fonction buf_write
+				atomic_set(&wait_data_read,0); //reset du flag d'attente de données
+				down_interruptible(&SemBuf);
+					///Faire un signal sur le Read et ensuite suppr le break
+				break;
+			}
+		}
+		cpt++;
+	}
+
+
+	if(atomic_read(&wait_data_write)>0 && cpt>0){
+		up(&SemSignalWrite);//envoi du signal "données disponibles"
+	}
+	up(&SemBuf);
+	up(&SemWriteBuf);
+	
+	printk("Buffer_circulaire : end write\n");
+
+	return cpt;
+	
 	//vérifier Buffer WriteBuf est dispo (sema)
 	//copy_from_user : vérifier le succès + message a retourner au user
 	//Vérifer Buffer circulaire Sema 
 	// BufIn (loop)
+	//relache des semaphores
+	//si test sur wait_data up sur semSignal
 	//retourne à l'usager nombre de byte écrit
 			
-	return 0;
 }
 
 long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){

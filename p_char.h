@@ -5,7 +5,9 @@
 
 #define READWRITE_BUFSIZE 16
 #define DEFAULT_BUFSIZE 256
-#define DEFAULT_RWSIZE 16
+
+
+atomic_t DEFAULT_RWSIZE =ATOMIC_INIT(16); //Paramètre en INT car modifiable par IOCTL
 
 
 // ************************ Structures ********************************
