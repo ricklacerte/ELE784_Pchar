@@ -6,9 +6,7 @@
 #define READWRITE_BUFSIZE 16
 #define DEFAULT_BUFSIZE 256
 
-
-atomic_t DEFAULT_RWSIZE =ATOMIC_INIT(16); //Paramètre en INT car modifiable par IOCTL
-
+#define BUF_DATA_TYPE char
 
 // ************************ Structures ********************************
 struct BufStruct {
@@ -23,7 +21,7 @@ struct BufStruct {
 struct Buf_Dev {
     unsigned short      *ReadBuf;
     unsigned short      *WriteBuf;
-    //struct semaphore    SemBuf; // if(Calvin = d'accord) sort la semaphore 
+    //struct semaphore    SemBuf;
     unsigned short      numWriter;
     unsigned short      numReader;
     struct class		*mclass;
