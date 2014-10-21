@@ -1,13 +1,19 @@
 #include <stdio.h>
+#include <fcntl.h>
+#include <linux/stat.h>
+//#include <string.h>
+#include <stdlib.h>
 
-#define BUF_SIZE 16
-#define CMD_SIZE 50
+#define BUF_SIZE 256
 
-char app_buf[BUF_SIZE]={0};
+char * app_buf;
 char commande='0';
 int nb_data=0;
+int hd_pilote;
+int data_trnsf;
 
 void affiche_menu(){
+	app_buf=(char *)malloc (sizeof (char) * BUF_SIZE);
 	printf("\n\n\n\nsalut chummé! Fais un choix judicieux parmi ceux-ci :\n");
 		printf("	NO      : ACTIONS \n");
 		printf("	--------|---------------------------------- \n");
@@ -22,7 +28,7 @@ void affiche_menu(){
 int main (int argc, char *argv[]){
 
 affiche_menu();
-printf("Entrez votre commande:");
+printf("\n\n\nEntrez votre commande:");
 
 //COMMANDE
 while(commande!='q'){
@@ -30,17 +36,41 @@ while(commande!='q'){
 
 	switch (commande) {
 	case '1':{
-		printf("READ_B\n");
+		printf("\n\n\nLECTURE BLOQUANTE\n");
+		printf("-----------------------------------------\n");
 		printf("Entrez le nombre de données à lire: ");
 		scanf("%d",&nb_data);
-		open("/dev/etsele_cdev",gfdshghuytreuyhtgnhtewytrv g kjuytojn
-		
+
+		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY),S_IRUSR);
+		if(hd_pilote>0){
+			data_trnsf=read(hd_pilote,app_buf,nb_data);
+			printf("nombre de data recue: %d \n",data_trnsf);
+			printf("data : %s \n",app_buf);
+			close(hd_pilote);		
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
 		break;}
 
 	case '2':{
-		printf("READ_NB\n");
+		printf("\n\n\nLECTURE NON-BLOQUANTE\n");
+		printf("-----------------------------------------\n");
 		printf("Entrez le nombre de données à lire: ");
 		scanf("%d",&nb_data);
+
+		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
+		if(hd_pilote>0){
+			data_trnsf=read(hd_pilote,app_buf,nb_data);
+			printf("nombre de data recue: %d \n",data_trnsf);
+			printf("data : %s \n",app_buf);
+			close(hd_pilote);		
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
 		break;}
 
 	case '3':{
@@ -56,7 +86,7 @@ while(commande!='q'){
 		break;}
 
 	case 'q':{
-		printf("Bonne journée, vous venez de quitter!\n");
+		printf("Bonne journée mon pote !\n");
 		break;}
 
 	default:{
@@ -64,6 +94,7 @@ while(commande!='q'){
 	 	break;}
 	}
 }
+free(app_buf);
 return 0;
 
 }

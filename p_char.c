@@ -250,25 +250,20 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	// Vérifie l'overload du ReadBuf
 	if(count>atomic_read(&DEFAULT_RWSIZE))
 		count=atomic_read(&DEFAULT_RWSIZE); 
-		// ou return -EOVERFLOW; 
 
 	printk(KERN_WARNING "Buffer_circulaire READ: CHAR to read=%d \n",count);
 	
 	// ************** à valider ***********************
-	// capture le Buffer circulaire en AYANT le ReadBuf
-	down_interruptible(&SemReadBuf);	
+
 	down_interruptible(&SemBuf);
-		//Buffer vide ?
-		if(Buffer.BufEmpty){
-			up(&SemBuf);
-			printk(KERN_WARNING "Buffer_circulaire READ: Buffer vide!\n");
-			return -ENODATA;
-		}
+	printk(KERN_WARNING "Buffer_circulaire READ: got SemBuf");
+	down_interruptible(&SemReadBuf);
+	printk(KERN_WARNING "Buffer_circulaire READ: got ReadBuf");	
 	
 	while(char_read<count)
 	{
-		res=BufOut(&Buffer,&(BDev.ReadBuf[char_read])); // OK=0, Buffer vide =-1 modif: if(BufOut(&Buffer,&(BDev.ReadBuf[char_read])))//renvoie -1 sur buffer vide
-		
+		res=BufOut(&Buffer,&(BDev.ReadBuf[char_read])); // OK=0, Buffer vide =-1 
+
 		if (res!=0){ 
 			//Buffer maintenant vide
 			printk(KERN_WARNING "Buffer_circulaire READ: Buffer maintenant vide!\n");
@@ -282,8 +277,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 			//MODE : BLOQUANT
 			else{
 				printk(KERN_WARNING "Buffer_circulaire READ: Bloquant\n");
-				//*********** à vérifier (cours c'était à l'intérieur d'un while)***************
-				up(&SemBuf); //relache le buffer circulaire
+				up(&SemBuf); 
 				up(&SemReadBuf);
 
 				//TÂCHE placé dans la WAIT_QUEUE de READ
@@ -292,43 +286,23 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 				avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
 				Q: sauvegarde dans struct flip->data??
 				*/
-				wait_event(READ_Queue,Buffer.BufEmpty>0); // Tâches réveillées en MÊME TEMPS (TOUTES)
-
+				printk(KERN_WARNING "Buffer_circulaire READ: Task(/ %s/ PID= %d)SLEEP",current->comm,current->pid);
+				wait_event(READ_Queue,Buffer.BufEmpty==0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+				printk(KERN_WARNING "Buffer_circulaire READ: Tasks AWAKEN");
 				down_interruptible(&SemBuf);
-				down_interruptible(&SemReadBuf);
-				
-				// **************** anciennement **************************************	
-				/*if(atomic_read(&wait_data_read)>0 && char_read>0){
-					up(&SemSignalRead);//envoi du signal "données disponibles"
-				}//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
-
-				atomic_inc(&wait_data_write);//incrémentation du flag
-				down_interruptible(&SemSignalWrite);//on attend le signal de la fonction buf_write
-				atomic_set(&wait_data_write,0); //reset du flag d'attente de données
-				down_interruptible(&SemBuf);*/
-				
+				down_interruptible(&SemReadBuf);			
 			}
 		}
 		
 		char_read++;
 	}
-
 	up(&SemBuf);
-	
-	/*// **************** anciennement **************************************	
-	//à ce niveau on possède le ReadBuf et nos données s'y trouve
-	if(atomic_read(&wait_data_read)>0 && char_read>0){
-		up(&SemSignalRead);//envoi du signal "données disponibles"
-	}
-	//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
-	*/
-
 
 	//nb CHARs renvoyé au USER
 	char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
 	up(&SemReadBuf);
 
-	printk(KERN_WARNING "Buffer_circulaire READ: end return=%d \n", char_read);
+	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
 	return char_read;
 }
 
