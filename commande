@@ -1,0 +1,8 @@
+
+
+
+"compiler l'application usager"
+gcc application_user.c -o $PWD/app_user
+
+
+

@@ -52,6 +52,7 @@ atomic_t wait_data_read = ATOMIC_INIT(0);
 // file d'attente (BLOQUANT)
 //struct wait_queue_head_t READ_Queue;
 DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
+DECLARE_WAIT_QUEUE_HEAD(WRITE_Queue);
 
 
 
@@ -75,6 +76,8 @@ static int __init buf_init(void){
 //initialisation file d'attente
 	//DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
 	init_waitqueue_head(&READ_Queue);
+	init_waitqueue_head(&WRITE_Queue);
+
 	
 ///initialisation du BDev
 	cdev_init(&BDev.cdev, &Buf_fops);
@@ -90,12 +93,12 @@ static int __init buf_init(void){
     Buffer.BufFull=0;
     Buffer.BufEmpty=1;
     Buffer.BufSize=DEFAULT_BUFSIZE;
-	Buffer.Buffer=(unsigned short *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	Buffer.Buffer=(unsigned char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 //valider le malloc
 
 /// initialisation des buffers lecture et ecriture
-	BDev.WriteBuf=(unsigned short *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
-	BDev.ReadBuf=(unsigned short *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	BDev.WriteBuf=(unsigned char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	BDev.ReadBuf=(unsigned char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 	//valider le malloc
 
 	cdev_add(&BDev.cdev, BDev.dev, 1);
@@ -113,7 +116,7 @@ static void __exit buf_exit(void){
 	kfree(BDev.ReadBuf);
 
 //Désallocation du Device
-	unregister_chrdev_region(BDev.dev,1);
+	//unregister_chrdev_region(BDev.dev,1);
 	cdev_del(&BDev.cdev);
 	device_destroy(BDev.mclass, BDev.dev);
 	class_destroy(BDev.mclass);
@@ -337,63 +340,96 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 
 ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff_t *f_ops){
 	
-	int cpt=0;
-	
-
+	unsigned int char_write=0;
+	unsigned long char_miss;
+	unsigned long nb_bytes=0;
+	int i;
 	//verifier le mode bloquant ou non (flag flip->f_flags)
 
-
 	printk(KERN_WARNING "Buffer_circulaire WRITE: Begin \n");
-	count=count/sizeof(char); //idem que pour buf_read on veut un nombre de byte pas un poids
-	
+	nb_bytes=count/sizeof(unsigned char); //idem que pour buf_read on veut un nombre de byte pas un poids
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %d \n", count);
 	// vérifie l'overload à confirmer avec CALVIN!!!!!!!!!!!!!
 	if(count>atomic_read(&DEFAULT_RWSIZE))
 		count=atomic_read(&DEFAULT_RWSIZE);	
 	
 	down_interruptible(&SemWriteBuf);
 	
-	//(erreur au make): count-=copy_from_user(&(BDev.WriteBuf),ubuf,count);
+	printk(KERN_WARNING "Buffer_circulaire WRITE: Write Buf capture \n");
+	
+	
+	//erreur au make): 
+	char_miss=copy_from_user(BDev.WriteBuf,ubuf,nb_bytes);
 	///unsigned long copy_from_user (void * to, const void __user * from, unsigned long n);
+	
+	
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes miss in Write Buf %lu \n", char_miss);
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %lu \n", nb_bytes);
+	
 	
 	down_interruptible(&SemBuf);
 	
-	while(cpt<count)
+	printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer circulaire capture \n");
+	
+	
+	while(char_write<count)
 	{
-		if(BufIn(&Buffer,&(BDev.WriteBuf[cpt])))//return -1 si Buffer Full
+		printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans buf circ \n",BDev.WriteBuf[char_write]);
+		if(BufIn(&Buffer,&(BDev.WriteBuf[char_write])))//return -1 si Buffer Full
 		{
-			if(flip->f_flags & O_NONBLOCK)
-				break;
-			else
-			{
-				up(&SemBuf);
-				
-				if(atomic_read(&wait_data_write)>0 && cpt>0){
-					up(&SemSignalWrite);//envoi du signal "données disponibles"
-				}//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
-				
-				
-				atomic_inc(&wait_data_read);//incrémentation du flag
-				down_interruptible(&SemSignalRead);//on attend le signal de la fonction buf_write
-				atomic_set(&wait_data_read,0); //reset du flag d'attente de données
-				down_interruptible(&SemBuf);
-					///Faire un signal sur le Read et ensuite suppr le break
+			if(flip->f_flags & O_NONBLOCK){
+				printk(KERN_WARNING "Buffer_circulaire WRITE: Non Bloquant \n");
 				break;
 			}
+			else
+			{
+				printk(KERN_WARNING "Buffer_circulaire WRITE: Bloquant \n");
+				up(&SemBuf);
+				up(&SemWriteBuf);
+				
+				//TÂCHE placé dans la WAIT_QUEUE de READ
+				// ********** à vérifier conserver ces paramètres au réveil ***************
+				//~ sauvegarder le data de ReadBuf, char_read, count... propre à chaques TÂCHES
+				//~ avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
+				//~ Q: sauvegarde dans struct flip->data??
+				
+				wait_event(WRITE_Queue,Buffer.BufFull>0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+
+				down_interruptible(&SemBuf);
+				down_interruptible(&SemWriteBuf);
+
+				
+				//~ if(atomic_read(&wait_data_write)>0 && cpt>0){
+					//~ up(&SemSignalWrite);//envoi du signal "données disponibles"
+				//~ }//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
+				//~ 
+				//~ 
+				//~ atomic_inc(&wait_data_read);//incrémentation du flag
+				//~ down_interruptible(&SemSignalRead);//on attend le signal de la fonction buf_write
+				//~ atomic_set(&wait_data_read,0); //reset du flag d'attente de données
+				//~ down_interruptible(&SemBuf);
+					//~ ///Faire un signal sur le Read et ensuite suppr le break
+			
+			}
 		}
-		cpt++;
+		char_write++;
 	}
 
-
-	if(atomic_read(&wait_data_write)>0 && cpt>0){
-		up(&SemSignalWrite);//envoi du signal "données disponibles"
-	}
+	for(i=0;i<char_write*2;i++){
+	printk(KERN_WARNING "Buffer_circulaire WRITE: char %d %c in circle Buffer",i,Buffer.Buffer[i]);
+}
+	//~ if(atomic_read(&wait_data_write)>0 && cpt>0){
+		//~ up(&SemSignalWrite);//envoi du signal "données disponibles"
+	//~ }
+	
 	up(&SemBuf);
+	 
 	up(&SemWriteBuf);
 	
 	printk(KERN_WARNING "Buffer_circulaire WRITE: end\n");
 
-	return cpt;
-	
+	//return char_write;
+	return 7;
 	//vérifier Buffer WriteBuf est dispo (sema)
 	//copy_from_user : vérifier le succès + message a retourner au user
 	//Vérifer Buffer circulaire Sema 
@@ -413,7 +449,7 @@ long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 }
 
 //************************************** FONCTIONS  ************************************************
-int BufIn(struct BufStruct *Buf, unsigned short *Data) {
+int BufIn(struct BufStruct *Buf, unsigned char *Data) {
     if (Buf->BufFull)
         return -1;
     Buf->BufEmpty = 0;
@@ -424,7 +460,7 @@ int BufIn(struct BufStruct *Buf, unsigned short *Data) {
     return 0;
 }
 
-int BufOut (struct BufStruct *Buf, unsigned short *Data) {
+int BufOut (struct BufStruct *Buf, unsigned char *Data) {
     if (Buf->BufEmpty)
         return -1;
     Buf->BufFull = 0;

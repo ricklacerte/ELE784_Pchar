@@ -12,5 +12,7 @@ sudo insmod p_char.ko
 echo "===> affichage du dmesg + grep"
 dmesg | grep Buffer_circulaire
 echo "===> regarder les messages en continus"
-watch 'dmesg |grep Buffer'
+
+watch 'dmesg | grep Buffer | tail -n 10'
+
 

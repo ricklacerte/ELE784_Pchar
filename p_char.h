@@ -6,7 +6,7 @@
 #define READWRITE_BUFSIZE 16
 #define DEFAULT_BUFSIZE 256
 
-#define BUF_DATA_TYPE char
+#define BUF_DATA_TYPE unsigned char
 
 // ************************ Structures ********************************
 struct BufStruct {
@@ -15,12 +15,12 @@ struct BufStruct {
     unsigned short  BufFull;
     unsigned short  BufEmpty;
     unsigned int    BufSize;
-    unsigned short  *Buffer;
+    unsigned char  *Buffer;
 };
 
 struct Buf_Dev {
-    unsigned short      *ReadBuf;
-    unsigned short      *WriteBuf;
+    unsigned char		*ReadBuf;
+    unsigned char   	*WriteBuf;
     //struct semaphore    SemBuf;
     unsigned short      numWriter;
     unsigned short      numReader;
@@ -30,8 +30,8 @@ struct Buf_Dev {
 };
 
 // ************************ Prototypes ********************************
-int BufIn(struct BufStruct *Buf, unsigned short *Data);
-int BufOut (struct BufStruct *Buf, unsigned short *Data);
+int BufIn(struct BufStruct *Buf, unsigned char *Data);
+int BufOut (struct BufStruct *Buf, unsigned char *Data);
 
 static int buf_init(void);
 static void buf_exit(void);
