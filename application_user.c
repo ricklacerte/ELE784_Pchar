@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <linux/stat.h>
-//#include <string.h>
+#include <string.h>
 #include <stdlib.h>
 
 #define BUF_SIZE 256
@@ -32,6 +32,9 @@ printf("\n\n\nEntrez votre commande:");
 
 //COMMANDE
 while(commande!='q'){
+	app_buf=0;
+	nb_data=0;
+	data_trnsf=0;
 	scanf("%c",&commande);
 
 	switch (commande) {
@@ -54,6 +57,8 @@ while(commande!='q'){
 		printf("-----------------------------------------\n");
 		break;}
 
+
+
 	case '2':{
 		printf("\n\n\nLECTURE NON-BLOQUANTE\n");
 		printf("-----------------------------------------\n");
@@ -63,7 +68,7 @@ while(commande!='q'){
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
-			printf("nombre de data recue: %d \n",data_trnsf);
+			printf("nombre de data lue: %d \n",data_trnsf);
 			printf("data : %s \n",app_buf);
 			close(hd_pilote);		
 		}
@@ -73,12 +78,48 @@ while(commande!='q'){
 		printf("-----------------------------------------\n");
 		break;}
 
+
+
 	case '3':{
-		printf("WRITE_B\n");
+		printf("\n\n\nÉCRITURE BLOQUANTE\n");
+		printf("-----------------------------------------\n");
+		printf("Entrez les de données à écrire: ");
+		scanf("%s",app_buf);
+
+		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY),S_IWUSR);
+		if(hd_pilote>0){
+			data_trnsf=write(hd_pilote,app_buf,nb_data);
+			printf("nombre de data écrit: %d \n",data_trnsf);
+			close(hd_pilote);		
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		/*printf("%s\n",app_buf);
+		nb_data=strlen(app_buf);
+		printf("%d\n",nb_data);*/
+		printf("-----------------------------------------\n");
 		break;}
 
 	case '4':{
-		printf("WRITE_NB\n");
+		printf("\n\n\nÉCRITURE NON-BLOQUANTE\n");
+		printf("-----------------------------------------\n");
+		printf("Entrez les de données à écrire: ");
+		scanf("%s",app_buf);
+
+		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
+		if(hd_pilote>0){
+			data_trnsf=write(hd_pilote,app_buf,nb_data);
+			printf("nombre de data écrit: %d \n",data_trnsf);
+			close(hd_pilote);		
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		/*printf("%s\n",app_buf);
+		nb_data=strlen(app_buf);
+		printf("%d\n",nb_data);*/
+		printf("-----------------------------------------\n");
 		break;}
 
 	case 'm':{
@@ -93,6 +134,7 @@ while(commande!='q'){
 		printf("Entrez votre commande:");
 	 	break;}
 	}
+	
 }
 free(app_buf);
 return 0;
