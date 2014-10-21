@@ -6,14 +6,14 @@
 
 #define BUF_SIZE 256
 
-char * app_buf;
+char * app_buf = NULL;
 char commande='0';
 int nb_data=0;
 int hd_pilote;
 int data_trnsf;
 
 void affiche_menu(){
-	app_buf=(char *)malloc (sizeof (char) * BUF_SIZE);
+	app_buf= malloc (sizeof (char) * BUF_SIZE);
 	printf("\n\n\n\nsalut chummé! Fais un choix judicieux parmi ceux-ci :\n");
 		printf("	NO      : ACTIONS \n");
 		printf("	--------|---------------------------------- \n");
@@ -32,7 +32,6 @@ printf("\n\n\nEntrez votre commande:");
 
 //COMMANDE
 while(commande!='q'){
-	app_buf=0;
 	nb_data=0;
 	data_trnsf=0;
 	scanf("%c",&commande);
@@ -88,6 +87,7 @@ while(commande!='q'){
 
 		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY),S_IWUSR);
 		if(hd_pilote>0){
+			nb_data=strlen(app_buf);
 			data_trnsf=write(hd_pilote,app_buf,nb_data);
 			printf("nombre de data écrit: %d \n",data_trnsf);
 			close(hd_pilote);		
@@ -95,9 +95,6 @@ while(commande!='q'){
 		else{
 			printf("incapable d'ouvrir le pilote! \n");
 		}
-		/*printf("%s\n",app_buf);
-		nb_data=strlen(app_buf);
-		printf("%d\n",nb_data);*/
 		printf("-----------------------------------------\n");
 		break;}
 
@@ -105,10 +102,13 @@ while(commande!='q'){
 		printf("\n\n\nÉCRITURE NON-BLOQUANTE\n");
 		printf("-----------------------------------------\n");
 		printf("Entrez les de données à écrire: ");
-		scanf("%s",app_buf);
+
+		scanf("%s",app_buf);;
+		nb_data=strlen(app_buf);
 
 		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
 		if(hd_pilote>0){
+			nb_data=strlen(app_buf);
 			data_trnsf=write(hd_pilote,app_buf,nb_data);
 			printf("nombre de data écrit: %d \n",data_trnsf);
 			close(hd_pilote);		
@@ -116,9 +116,6 @@ while(commande!='q'){
 		else{
 			printf("incapable d'ouvrir le pilote! \n");
 		}
-		/*printf("%s\n",app_buf);
-		nb_data=strlen(app_buf);
-		printf("%d\n",nb_data);*/
 		printf("-----------------------------------------\n");
 		break;}
 
