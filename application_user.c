@@ -13,6 +13,7 @@ int hd_pilote;
 int data_trnsf;
 
 void affiche_menu(){
+	
 	app_buf= malloc (sizeof (char) * BUF_SIZE);
 	printf("\n\n\n\nsalut chummé! Fais un choix judicieux parmi ceux-ci :\n");
 		printf("	NO      : ACTIONS \n");
@@ -37,7 +38,6 @@ while(commande!='q'){
 	nb_data=0;
 	data_trnsf=0;
 	scanf("%c",&commande);
-	printf("data=%s\n",app_buf);
 
 	switch (commande) {
 	case '1':{
@@ -71,7 +71,6 @@ while(commande!='q'){
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
 			close(hd_pilote);
-			nb_data=0;
 			printf("\nnombre de data lue: %d \n",data_trnsf);
 			nb_data=strlen(app_buf);
 			printf("nb data de la string : %d \n",nb_data);		
@@ -130,7 +129,7 @@ while(commande!='q'){
 		break;}
 
 	case 'q':{
-		printf("\nBonne journée mon pote !\n");
+		printf("\nBonne journée mon pote !\n\n\n");
 		break;}
 
 	default:{

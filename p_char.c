@@ -61,7 +61,7 @@ static int __init buf_init(void){
 	
 	printk(KERN_WARNING "Buffer_circulaire INIT: begin\n");
 	
-	alloc_chrdev_region(&BDev.dev,DEV_MAJOR,DEV_MINOR, MOD_NAME);
+	alloc_chrdev_region(&BDev.dev,DEV_MINOR_STRT,DEV_CNT, MOD_NAME);
 	BDev.mclass=class_create(THIS_MODULE, MOD_NAME);
 	device_create(BDev.mclass, NULL, BDev.dev, NULL, MOD_NAME);
 	
@@ -89,10 +89,10 @@ static int __init buf_init(void){
 
 ///initialisation du BufStruct
 	Buffer.InIdx=0;//write
-    Buffer.OutIdx=0;//read
-    Buffer.BufFull=0;
-    Buffer.BufEmpty=1;
-    Buffer.BufSize=DEFAULT_BUFSIZE;
+	Buffer.OutIdx=0;//read
+	Buffer.BufFull=0;
+	Buffer.BufEmpty=1;
+Buffer.BufSize=DEFAULT_BUFSIZE;
 	Buffer.Buffer=(unsigned char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 //valider le malloc
 
@@ -120,7 +120,7 @@ static void __exit buf_exit(void){
 	cdev_del(&BDev.cdev);
 	device_destroy(BDev.mclass, BDev.dev);
 	class_destroy(BDev.mclass);
-	unregister_chrdev_region(BDev.dev, DEV_MAJOR);
+	unregister_chrdev_region(BDev.dev, DEV_MINOR_STRT);
 
 	printk(KERN_WARNING "Buffer_circulaire EXIT: end\n");
 }
@@ -140,7 +140,7 @@ int buf_open(struct inode *inode, struct file *flip){
 	down_interruptible(&SemBDev);
 	printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
 	
-// Calvin help, c'est quoi ca?!
+
 	//BDev = container_of(inode->i_cdev, struct Buf_Dev*, cdev);	
 	flip->private_data=&BDev;
 
@@ -200,7 +200,7 @@ int buf_release(struct inode *inode, struct file *flip){
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: Begin\n");
 	
 	switch (flip->f_flags & O_ACCMODE){
-	down_interruptible(&SemBDev); // à valider avec Calvin Machine!
+	down_interruptible(&SemBDev); 
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: Begin numWriter=%d numReader=%d\n",BDev.numWriter,BDev.numReader);
 			case O_RDONLY:
 				BDev.numReader --;
@@ -241,7 +241,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	// Variables LOCALES
 	int res=0;
  	int char_read=0;
-	int temp;
+	
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
 
@@ -254,7 +254,6 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 
 	printk(KERN_WARNING "Buffer_circulaire READ: CHAR to read=%d \n",count);
 	
-	// ************** à valider ***********************
 
 	down_interruptible(&SemBuf);
 	printk(KERN_WARNING "Buffer_circulaire READ: got SemBuf");
@@ -281,16 +280,10 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 				up(&SemBuf); 
 				up(&SemReadBuf);
 
-				//TÂCHE placé dans la WAIT_QUEUE de READ
-				/*********** à vérifier conserver ces paramètres au réveil ***************
-				sauvegarder le data de ReadBuf, char_read, count... propre à chaques TÂCHES
-				avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
-				Q: sauvegarde dans struct flip->data??
-				*/
-
 				printk(KERN_WARNING "Buffer_circulaire READ: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
 				wait_event(READ_Queue,Buffer.BufEmpty==0); 
-				// Tâches TOUTES réveillées en MÊME TEMPS
+
+
 				printk(KERN_WARNING "Buffer_circulaire READ: Tasks AWAKEN");
 				down_interruptible(&SemBuf);
 				down_interruptible(&SemReadBuf);			
@@ -299,14 +292,15 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 		
 		char_read++;
 	}
+
+	printk(KERN_WARNING "Buffer_circulaire READ: Wake Write_Queue \n");		
+	wake_up(&WRITE_Queue);
+
 	printk(KERN_WARNING "Buffer_circulaire READ:end, OutIdx =%d \n", Buffer.OutIdx);
 	up(&SemBuf);
 
 	//nb CHARs renvoyé au USER
-	temp=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
-	char_read-=temp;
-	//char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
-	rmb();
+	char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
 	up(&SemReadBuf);
 
 	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
@@ -339,8 +333,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	printk(KERN_WARNING "Buffer_circulaire WRITE: WriteBuf capture \n");
 	char_miss=copy_from_user(BDev.WriteBuf,ubuf,nb_bytes);
 	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes missed in WriteBuf %lu \n", char_miss);
-	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to WriteBuf %lu \n", nb_bytes);
-	
+
 	//écriture dans le Buffer circulaire
 	down_interruptible(&SemBuf);
 	printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer circulaire capture \n");
@@ -368,13 +361,8 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 					up(&SemBuf);
 					up(&SemWriteBuf);
 				
-					//TÂCHE placé dans la WAIT_QUEUE de READ
-					// ********** à vérifier conserver ces paramètres au réveil ***************
-					//~ sauvegarder le data de ReadBuf, char_read, count... propre à chaques TÂCHES
-					//~ avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
-					//~ Q: sauvegarde dans struct flip->data??
-				
-					//wait_event(WRITE_Queue,Buffer.BufFull>0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+					printk(KERN_WARNING "Buffer_circulaire WRITE: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
+					wait_event(WRITE_Queue,Buffer.BufFull==0); 
 				
 					down_interruptible(&SemWriteBuf);
 					down_interruptible(&SemBuf);
@@ -382,7 +370,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 			}
 			char_write++;
 		}
-		//fin d'une écriture OU Buffer circulaire full
+		//fin d'une écriture OU Buffer circulaire full-> Wake READ!
 		printk(KERN_WARNING "Buffer_circulaire WRITE: Wake READ_Queue \n");		
 		wake_up(&READ_Queue);
 
