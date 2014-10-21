@@ -219,12 +219,11 @@ int buf_release(struct inode *inode, struct file *flip){
 				up(&SemBDev);
 				return -ENOTSUPP;				
 	}
-	printk(KERN_WARNING "Buffer_circulaire RELEASE: end numWriter=%d numReader=%d\n",BDev.numWriter,BDev.numReader);
-			
+
+	printk(KERN_WARNING "Buffer_circulaire RELEASE: end numWriter=%d numReader=%d\n",BDev.numWriter,BDev.numReader);			
 	up(&SemBDev);
 	
-	printk(KERN_WARNING "Buffer_circulaire RELEASE: end\n");
-	
+	printk(KERN_WARNING "Buffer_circulaire RELEASE: end\n");	
 	return 0;
 }
 
@@ -304,7 +303,11 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	up(&SemReadBuf);
 
 	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
-	return char_read;
+	if (char_read)	
+		return char_read;
+	else
+		return -EAGAIN;
+
 }
 
 
@@ -383,10 +386,13 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	up(&SemBuf);
 	up(&SemWriteBuf);
 	
-	printk(KERN_WARNING "Buffer_circulaire WRITE: end char_write=%d\n",char_write);
-	return char_write;			
-}
+	printk(KERN_WARNING "Buffer_circulaire WRITE: end char_write=%d\n",char_write);	
 
+	if (char_write)	
+		return char_write;
+	else
+		return -EAGAIN;		
+}
 
 
 
