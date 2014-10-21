@@ -32,9 +32,12 @@ printf("\n\n\nEntrez votre commande:");
 
 //COMMANDE
 while(commande!='q'){
+
+	strcpy(app_buf,"");	
 	nb_data=0;
 	data_trnsf=0;
 	scanf("%c",&commande);
+	printf("data=%s\n",app_buf);
 
 	switch (commande) {
 	case '1':{
@@ -46,7 +49,7 @@ while(commande!='q'){
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY),S_IRUSR);
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
-			printf("nombre de data recue: %d \n",data_trnsf);
+			printf("\nnombre de data recue: %d \n",data_trnsf);
 			printf("data : %s \n",app_buf);
 			close(hd_pilote);		
 		}
@@ -67,9 +70,12 @@ while(commande!='q'){
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
-			printf("nombre de data lue: %d \n",data_trnsf);
+			close(hd_pilote);
+			nb_data=0;
+			printf("\nnombre de data lue: %d \n",data_trnsf);
+			nb_data=strlen(app_buf);
+			printf("nb data de la string : %d \n",nb_data);		
 			printf("data : %s \n",app_buf);
-			close(hd_pilote);		
 		}
 		else{
 			printf("incapable d'ouvrir le pilote! \n");
@@ -103,15 +109,15 @@ while(commande!='q'){
 		printf("-----------------------------------------\n");
 		printf("Entrez les de données à écrire: ");
 
-		scanf("%s",app_buf);;
-		nb_data=strlen(app_buf);
+		scanf("%s",app_buf);
 
 		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
 		if(hd_pilote>0){
 			nb_data=strlen(app_buf);
+			printf("nombre de data a écrire: %d \n",nb_data);
 			data_trnsf=write(hd_pilote,app_buf,nb_data);
-			printf("nombre de data écrit: %d \n",data_trnsf);
-			close(hd_pilote);		
+			close(hd_pilote);
+			printf("nombre de data écrit: %d \n",data_trnsf);		
 		}
 		else{
 			printf("incapable d'ouvrir le pilote! \n");
@@ -124,11 +130,11 @@ while(commande!='q'){
 		break;}
 
 	case 'q':{
-		printf("Bonne journée mon pote !\n");
+		printf("\nBonne journée mon pote !\n");
 		break;}
 
 	default:{
-		printf("Entrez votre commande:");
+		printf("\nEntrez votre commande:");
 	 	break;}
 	}
 	

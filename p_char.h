@@ -30,8 +30,8 @@ struct Buf_Dev {
 };
 
 // ************************ Prototypes ********************************
-int BufIn(struct BufStruct *Buf, unsigned char *Data);
-int BufOut (struct BufStruct *Buf, unsigned char *Data);
+int BufIn(struct BufStruct *Buf, char *Data);
+int BufOut (struct BufStruct *Buf, char *Data);
 
 static int buf_init(void);
 static void buf_exit(void);

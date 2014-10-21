@@ -241,6 +241,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	// Variables LOCALES
 	int res=0;
  	int char_read=0;
+	int temp;
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
 
@@ -266,7 +267,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 
 		if (res!=0){ 
 			//Buffer maintenant vide
-			printk(KERN_WARNING "Buffer_circulaire READ: Buffer maintenant vide!\n");
+			printk(KERN_WARNING "Buffer_circulaire READ: Buffer vide!\n");
 			
 			//MODE : NON BLOQUANT
 			if(flip->f_flags & O_NONBLOCK){
@@ -286,8 +287,10 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 				avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
 				Q: sauvegarde dans struct flip->data??
 				*/
-				printk(KERN_WARNING "Buffer_circulaire READ: Task(/ %s/ PID= %d)SLEEP",current->comm,current->pid);
-				wait_event(READ_Queue,Buffer.BufEmpty==0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+
+				printk(KERN_WARNING "Buffer_circulaire READ: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
+				wait_event(READ_Queue,Buffer.BufEmpty==0); 
+				// Tâches TOUTES réveillées en MÊME TEMPS
 				printk(KERN_WARNING "Buffer_circulaire READ: Tasks AWAKEN");
 				down_interruptible(&SemBuf);
 				down_interruptible(&SemReadBuf);			
@@ -296,10 +299,14 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 		
 		char_read++;
 	}
+	printk(KERN_WARNING "Buffer_circulaire READ:end, OutIdx =%d \n", Buffer.OutIdx);
 	up(&SemBuf);
 
 	//nb CHARs renvoyé au USER
-	char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
+	temp=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
+	char_read-=temp;
+	//char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
+	rmb();
 	up(&SemReadBuf);
 
 	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
@@ -318,100 +325,78 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	unsigned long char_miss;
 	unsigned long nb_bytes=0;
 	int i;
-	//verifier le mode bloquant ou non (flag flip->f_flags)
+	int res;
 
-	printk(KERN_WARNING "Buffer_circulaire WRITE: Begin \n");
 	nb_bytes=count/sizeof(unsigned char); //idem que pour buf_read on veut un nombre de byte pas un poids
-	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %d \n", count);
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %lu \n", nb_bytes);
+
 	// vérifie l'overload à confirmer avec CALVIN!!!!!!!!!!!!!
 	if(count>atomic_read(&DEFAULT_RWSIZE))
 		count=atomic_read(&DEFAULT_RWSIZE);	
 	
+	//écriture dans WriteBuf
 	down_interruptible(&SemWriteBuf);
-	
-	printk(KERN_WARNING "Buffer_circulaire WRITE: Write Buf capture \n");
-	
-	
-	//erreur au make): 
+	printk(KERN_WARNING "Buffer_circulaire WRITE: WriteBuf capture \n");
 	char_miss=copy_from_user(BDev.WriteBuf,ubuf,nb_bytes);
-	///unsigned long copy_from_user (void * to, const void __user * from, unsigned long n);
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes missed in WriteBuf %lu \n", char_miss);
+	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to WriteBuf %lu \n", nb_bytes);
 	
-	
-	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes miss in Write Buf %lu \n", char_miss);
-	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %lu \n", nb_bytes);
-	
-	
+	//écriture dans le Buffer circulaire
 	down_interruptible(&SemBuf);
-	
 	printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer circulaire capture \n");
-	
-	
-	while(char_write<count)
-	{
-		printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans buf circ \n",BDev.WriteBuf[char_write]);
-		if(BufIn(&Buffer,&(BDev.WriteBuf[char_write])))//return -1 si Buffer Full
+
+
+		while(char_write<count)
 		{
-			if(flip->f_flags & O_NONBLOCK){
-				printk(KERN_WARNING "Buffer_circulaire WRITE: Non Bloquant \n");
-				break;
-			}
-			else
+			printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans buf circ \n",BDev.WriteBuf[char_write]);
+		
+			res=BufIn(&Buffer,&(BDev.WriteBuf[char_write]));
+			if(res!=0)//0=OK, -1 = Full
 			{
-				printk(KERN_WARNING "Buffer_circulaire WRITE: Bloquant \n");
-				up(&SemBuf);
-				up(&SemWriteBuf);
-				
-				//TÂCHE placé dans la WAIT_QUEUE de READ
-				// ********** à vérifier conserver ces paramètres au réveil ***************
-				//~ sauvegarder le data de ReadBuf, char_read, count... propre à chaques TÂCHES
-				//~ avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
-				//~ Q: sauvegarde dans struct flip->data??
-				
-				wait_event(WRITE_Queue,Buffer.BufFull>0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+			//BUFFER = FULL
 
-				down_interruptible(&SemBuf);
-				down_interruptible(&SemWriteBuf);
+				//NON-BLOQUANT
+				if(flip->f_flags & O_NONBLOCK){
+					printk(KERN_WARNING "Buffer_circulaire WRITE: Non Bloquant \n");
+					break;
+				}
 
+				//BLOQUANT
+				else
+				{
+					printk(KERN_WARNING "Buffer_circulaire WRITE: Bloquant \n");
+					up(&SemBuf);
+					up(&SemWriteBuf);
 				
-				//~ if(atomic_read(&wait_data_write)>0 && cpt>0){
-					//~ up(&SemSignalWrite);//envoi du signal "données disponibles"
-				//~ }//l'envoi du signal ici permet d'éviter un interblocage sur le cas ou le read et write attendent le signal
-				//~ 
-				//~ 
-				//~ atomic_inc(&wait_data_read);//incrémentation du flag
-				//~ down_interruptible(&SemSignalRead);//on attend le signal de la fonction buf_write
-				//~ atomic_set(&wait_data_read,0); //reset du flag d'attente de données
-				//~ down_interruptible(&SemBuf);
-					//~ ///Faire un signal sur le Read et ensuite suppr le break
-			
+					//TÂCHE placé dans la WAIT_QUEUE de READ
+					// ********** à vérifier conserver ces paramètres au réveil ***************
+					//~ sauvegarder le data de ReadBuf, char_read, count... propre à chaques TÂCHES
+					//~ avant de dormir, pour que lors du réveil on reprend à l'endroit où nous étions
+					//~ Q: sauvegarde dans struct flip->data??
+				
+					//wait_event(WRITE_Queue,Buffer.BufFull>0); // Tâches réveillées en MÊME TEMPS (TOUTES)
+				
+					down_interruptible(&SemWriteBuf);
+					down_interruptible(&SemBuf);
+				}
 			}
+			char_write++;
 		}
-		char_write++;
+		//fin d'une écriture OU Buffer circulaire full
+		printk(KERN_WARNING "Buffer_circulaire WRITE: Wake READ_Queue \n");		
+		wake_up(&READ_Queue);
+
+
+	for(i=0;i<char_write;i++){
+	printk(KERN_WARNING "Buffer_circulaire WRITE: char %d %c in circle Buffer",i,Buffer.Buffer[i]);
 	}
 
-	for(i=0;i<char_write*2;i++){
-	printk(KERN_WARNING "Buffer_circulaire WRITE: char %d %c in circle Buffer",i,Buffer.Buffer[i]);
-}
-	//~ if(atomic_read(&wait_data_write)>0 && cpt>0){
-		//~ up(&SemSignalWrite);//envoi du signal "données disponibles"
-	//~ }
-	
+	printk(KERN_WARNING "Buffer_circulaire WRITE: end InIdx=%d\n",Buffer.InIdx);
 	up(&SemBuf);
-	 
 	up(&SemWriteBuf);
 	
-	printk(KERN_WARNING "Buffer_circulaire WRITE: end\n");
-
-	//return char_write;
-	return 7;
-	//vérifier Buffer WriteBuf est dispo (sema)
-	//copy_from_user : vérifier le succès + message a retourner au user
-	//Vérifer Buffer circulaire Sema 
-	// BufIn (loop)
-	//relache des semaphores
-	//si test sur wait_data up sur semSignal
-	//retourne à l'usager nombre de byte écrit
-			
+	printk(KERN_WARNING "Buffer_circulaire WRITE: end char_write=%d\n",char_write);
+	return char_write;			
 }
 
 
@@ -423,7 +408,7 @@ long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 }
 
 //************************************** FONCTIONS  ************************************************
-int BufIn(struct BufStruct *Buf, unsigned char *Data) {
+int BufIn(struct BufStruct *Buf, char *Data) {
     if (Buf->BufFull)
         return -1;
     Buf->BufEmpty = 0;
@@ -434,7 +419,7 @@ int BufIn(struct BufStruct *Buf, unsigned char *Data) {
     return 0;
 }
 
-int BufOut (struct BufStruct *Buf, unsigned char *Data) {
+int BufOut (struct BufStruct *Buf, char *Data) {
     if (Buf->BufEmpty)
         return -1;
     Buf->BufFull = 0;
