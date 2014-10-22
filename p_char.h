@@ -15,12 +15,12 @@ struct BufStruct {
     unsigned short  BufFull;
     unsigned short  BufEmpty;
     unsigned int    BufSize;
-    unsigned char  *Buffer;
+    char  *Buffer;
 };
 
 struct Buf_Dev {
-    unsigned char		*ReadBuf;
-    unsigned char   	*WriteBuf;
+    char		*ReadBuf;
+    char   	*WriteBuf;
     unsigned short      numWriter;
     unsigned short      numReader;
     struct class		*mclass;

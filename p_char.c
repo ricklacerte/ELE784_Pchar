@@ -40,8 +40,6 @@ struct semaphore    SemBuf;
 struct semaphore    SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
-struct semaphore	SemSignalRead; //pour envoyer un signal données disponibles aux lecteurs
-struct semaphore	SemSignalWrite;//pour envoyer un signal données lu on peut continuer à écrire
 
 // déclaration des variables atomiques
 
@@ -70,8 +68,6 @@ static int __init buf_init(void){
 	sema_init(&SemBDev,1);
 	sema_init(&SemWriteBuf,1);
 	sema_init(&SemReadBuf,1);
-	sema_init(&SemSignalRead,0);
-	sema_init(&SemSignalWrite,0);
 
 //initialisation file d'attente
 	//DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
@@ -93,12 +89,12 @@ static int __init buf_init(void){
 	Buffer.BufFull=0;
 	Buffer.BufEmpty=1;
 Buffer.BufSize=DEFAULT_BUFSIZE;
-	Buffer.Buffer=(unsigned char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	Buffer.Buffer=(char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 //valider le malloc
 
 /// initialisation des buffers lecture et ecriture
-	BDev.WriteBuf=(unsigned char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
-	BDev.ReadBuf=(unsigned char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	BDev.WriteBuf=(char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
+	BDev.ReadBuf=(char *) kmalloc(atomic_read(&DEFAULT_RWSIZE)*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 	//valider le malloc
 
 	cdev_add(&BDev.cdev, BDev.dev, 1);
@@ -240,7 +236,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	// Variables LOCALES
 	int res=0;
  	int char_read=0;
-	
+	int n=0;
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
 
@@ -261,7 +257,9 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	
 	while(char_read<count)
 	{
-		res=BufOut(&Buffer,&(BDev.ReadBuf[char_read])); // OK=0, Buffer vide =-1 
+		res=BufOut(&Buffer,&BDev.ReadBuf[char_read]); // OK=0, Buffer vide =-1 
+		//printk(KERN_WARNING "Buffer_circulaire READ: char %d %c in circle Buffer",char_read,BDev.ReadBuf[char_read]);
+		//printk(KERN_WARNING "Buffer_circulaire READ: res=%d, char_read=%d, count=%d \n",res,char_read,count);
 
 		if (res!=0){ 
 			//Buffer maintenant vide
@@ -280,8 +278,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 				up(&SemReadBuf);
 
 				printk(KERN_WARNING "Buffer_circulaire READ: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
-				wait_event(READ_Queue,Buffer.BufEmpty==0); 
-
+				wait_event_interruptible(READ_Queue,Buffer.BufEmpty!=1); 
 
 				printk(KERN_WARNING "Buffer_circulaire READ: Tasks AWAKEN");
 				down_interruptible(&SemBuf);
@@ -299,7 +296,8 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	up(&SemBuf);
 
 	//nb CHARs renvoyé au USER
-	char_read-=copy_to_user(ubuf,&(BDev.ReadBuf),char_read);
+	n=copy_to_user(ubuf,BDev.ReadBuf,char_read);
+	char_read-=n;
 	up(&SemReadBuf);
 
 	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
@@ -321,10 +319,10 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	unsigned int char_write=0;
 	unsigned long char_miss;
 	unsigned long nb_bytes=0;
-	int i;
+	//int i;
 	int res;
 
-	nb_bytes=count/sizeof(unsigned char); //idem que pour buf_read on veut un nombre de byte pas un poids
+	nb_bytes=count/sizeof(char); //idem que pour buf_read on veut un nombre de byte pas un poids
 	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %lu \n", nb_bytes);
 
 	// vérifie l'overload à confirmer avec CALVIN!!!!!!!!!!!!!
@@ -344,7 +342,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 
 		while(char_write<count)
 		{
-			printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans buf circ \n",BDev.WriteBuf[char_write]);
+			printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans WriteBuf \n",BDev.WriteBuf[char_write]);
 		
 			res=BufIn(&Buffer,&(BDev.WriteBuf[char_write]));
 			if(res!=0)//0=OK, -1 = Full
@@ -365,7 +363,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 					up(&SemWriteBuf);
 				
 					printk(KERN_WARNING "Buffer_circulaire WRITE: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
-					wait_event(WRITE_Queue,Buffer.BufFull==0); 
+					wait_event_interruptible(WRITE_Queue,Buffer.BufFull!=1); 
 				
 					down_interruptible(&SemWriteBuf);
 					down_interruptible(&SemBuf);
@@ -376,11 +374,6 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 		//fin d'une écriture OU Buffer circulaire full-> Wake READ!
 		printk(KERN_WARNING "Buffer_circulaire WRITE: Wake READ_Queue \n");		
 		wake_up(&READ_Queue);
-
-
-	for(i=0;i<char_write;i++){
-	printk(KERN_WARNING "Buffer_circulaire WRITE: char %d %c in circle Buffer",i,Buffer.Buffer[i]);
-	}
 
 	printk(KERN_WARNING "Buffer_circulaire WRITE: end InIdx=%d\n",Buffer.InIdx);
 	up(&SemBuf);

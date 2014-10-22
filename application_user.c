@@ -11,10 +11,12 @@ char commande='0';
 int nb_data=0;
 int hd_pilote;
 int data_trnsf;
+int i=0;
 
 void affiche_menu(){
 	
-	app_buf= malloc (sizeof (char) * BUF_SIZE);
+	app_buf= (char *)malloc (sizeof (char) * BUF_SIZE);
+
 	printf("\n\n\n\nsalut chummé! Fais un choix judicieux parmi ceux-ci :\n");
 		printf("	NO      : ACTIONS \n");
 		printf("	--------|---------------------------------- \n");
@@ -73,8 +75,9 @@ while(commande!='q'){
 			close(hd_pilote);
 			printf("\nnombre de data lue: %d \n",data_trnsf);
 			nb_data=strlen(app_buf);
-			printf("nb data de la string : %d \n",nb_data);		
+			printf("nb data de la string : %d \n",nb_data);	
 			printf("data : %s \n",app_buf);
+	
 		}
 		else{
 			printf("incapable d'ouvrir le pilote! \n");
