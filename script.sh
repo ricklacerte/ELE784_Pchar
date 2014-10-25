@@ -10,6 +10,6 @@ dmesg | grep Buffer_circulaire | grep exit
 echo "===>  insert module"
 sudo insmod p_char.ko
 echo "===> regarder les messages en continue"
-watch 'dmesg | grep Buffer | tail -n 20'
+watch 'dmesg | grep Buffer | tail -n 40'
 
 

@@ -4,9 +4,11 @@
 #define MOD_NAME	"etsele_cdev"
 
 #define READWRITE_BUFSIZE 16
-#define DEFAULT_BUFSIZE 16
+#define DEFAULT_BUFSIZE 32
 
-#define BUF_DATA_TYPE unsigned char
+#define BUF_DATA_TYPE char
+
+#include "ioctl_cmd.h"
 
 // ************************ Structures ********************************
 struct BufStruct {
@@ -19,8 +21,8 @@ struct BufStruct {
 };
 
 struct Buf_Dev {
-    char		*ReadBuf;
-    char   	*WriteBuf;
+    char				*ReadBuf;
+    char   				*WriteBuf;
     unsigned short      numWriter;
     unsigned short      numReader;
     struct class		*mclass;

@@ -35,9 +35,8 @@ struct file_operations Buf_fops ={
 };
 
 //déclaration des semaphores
-
-struct semaphore    SemBuf;
-struct semaphore    SemBDev;
+struct semaphore	SemBuf;
+struct semaphore	SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
 
@@ -88,7 +87,7 @@ static int __init buf_init(void){
 	Buffer.OutIdx=0;//read
 	Buffer.BufFull=0;
 	Buffer.BufEmpty=1;
-Buffer.BufSize=DEFAULT_BUFSIZE;
+	Buffer.BufSize=DEFAULT_BUFSIZE;
 	Buffer.Buffer=(char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
 //valider le malloc
 
@@ -236,28 +235,42 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	// Variables LOCALES
 	int res=0;
  	int char_read=0;
-	int n=0;
+	int nb_chaine=0;
+	int no_chaine=0;
+	int nb_char=0;
+	int temp=0;
+	int err=0;
+	int char_total=0;
+	int i=0;
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
-
-	//nombre de CHAR à lire 
-	count=count/sizeof(BUF_DATA_TYPE);
-	
-	// Vérifie l'overload du ReadBuf
-	if(count>atomic_read(&DEFAULT_RWSIZE))
-		count=atomic_read(&DEFAULT_RWSIZE); 
-
 	printk(KERN_WARNING "Buffer_circulaire READ: CHAR to read=%d \n",count);
-	
 
-	down_interruptible(&SemBuf);
-	printk(KERN_WARNING "Buffer_circulaire READ: got SemBuf");
-	down_interruptible(&SemReadBuf);
-	printk(KERN_WARNING "Buffer_circulaire READ: got ReadBuf");	
 	
-	while(char_read<count)
+//CAPTURE
+	down_interruptible(&SemBuf);
+	down_interruptible(&SemReadBuf);
+	
+	nb_chaine=count/Buffer.BufSize;	//nb chaines totales
+	printk(KERN_WARNING "Buffer_circulaire READ: nb_chaine=%d \n", nb_chaine);
+		
+while(no_chaine<=nb_chaine){
+
+	//Nombres de CHARs à transférer pour ce no_chaine.
+	if(no_chaine<nb_chaine){
+		nb_char=Buffer.BufSize;
+	}
+	else{
+		nb_char=count%Buffer.BufSize; //derniere chaine
+	} printk(KERN_WARNING "Buffer_circulaire READ: no_chaine=%d nb_char=%d \n", no_chaine,nb_char);
+
+	char_read=0;
+
+	//Remplir READBuf
+	while(char_read<nb_char)
 	{
 		res=BufOut(&Buffer,&BDev.ReadBuf[char_read]); // OK=0, Buffer vide =-1 
+		printk(KERN_WARNING "Buffer_circulaire READ: char_read= %d, char=%c \n",char_read,BDev.ReadBuf[char_read]);
 		//printk(KERN_WARNING "Buffer_circulaire READ: char %d %c in circle Buffer",char_read,BDev.ReadBuf[char_read]);
 		//printk(KERN_WARNING "Buffer_circulaire READ: res=%d, char_read=%d, count=%d \n",res,char_read,count);
 
@@ -280,29 +293,40 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 				printk(KERN_WARNING "Buffer_circulaire READ: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
 				wait_event_interruptible(READ_Queue,Buffer.BufEmpty!=1); 
 
-				printk(KERN_WARNING "Buffer_circulaire READ: Tasks AWAKEN");
 				down_interruptible(&SemBuf);
-				down_interruptible(&SemReadBuf);			
+				down_interruptible(&SemReadBuf);
+				printk(KERN_WARNING "Buffer_circulaire READ: Task(PROP=%s PID= %d)AWAKEN",current->comm,current->pid);			
 			}
 		}
-		
 		char_read++;
 	}
 
+	if(res==0){
+	//ENVOYER READBuf au USER
+	temp=no_chaine*Buffer.BufSize;
+	err=copy_to_user(&ubuf[temp],BDev.ReadBuf,nb_char);
+	printk(KERN_WARNING "Buffer_circulaire READ: ubuf start at=%d, nb_char=%d, err=%d \n",temp,nb_char,err);
+	}
+
+	no_chaine ++;
+}
+
+//FIN de la lecture
 	printk(KERN_WARNING "Buffer_circulaire READ: Wake Write_Queue \n");		
 	wake_up(&WRITE_Queue);
 
-	printk(KERN_WARNING "Buffer_circulaire READ:end, OutIdx =%d \n", Buffer.OutIdx);
-	up(&SemBuf);
+	//nb total CHAR tranférés
+	char_total=(no_chaine-1)*Buffer.BufSize+char_read;
+	printk(KERN_WARNING "Buffer_circulaire READ: end, OutIdx =%d \n", Buffer.OutIdx);
 
-	//nb CHARs renvoyé au USER
-	n=copy_to_user(ubuf,BDev.ReadBuf,char_read);
-	char_read-=n;
+	up(&SemBuf);
 	up(&SemReadBuf);
 
-	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_read);
-	if (char_read)	
-		return char_read;
+	printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_total);
+
+//RETURN
+	if(char_total)
+		return char_total;	
 	else
 		return -EAGAIN;
 
@@ -318,37 +342,54 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	
 	unsigned int char_write=0;
 	unsigned long char_miss;
-	unsigned long nb_bytes=0;
-	//int i;
 	int res;
-
-	nb_bytes=count/sizeof(char); //idem que pour buf_read on veut un nombre de byte pas un poids
-	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes to Write Buf %lu \n", nb_bytes);
-
-	// vérifie l'overload à confirmer avec CALVIN!!!!!!!!!!!!!
-	if(count>atomic_read(&DEFAULT_RWSIZE))
-		count=atomic_read(&DEFAULT_RWSIZE);	
+	int temp=0;
 	
-	//écriture dans WriteBuf
-	down_interruptible(&SemWriteBuf);
-	printk(KERN_WARNING "Buffer_circulaire WRITE: WriteBuf capture \n");
-	char_miss=copy_from_user(BDev.WriteBuf,ubuf,nb_bytes);
+	int no_chaine=0;
+	int nb_chaine=0;
+	int nb_char=0;
+	int char_total=0;
+	
+	printk(KERN_WARNING "Buffer_circulaire WRITE: count= %d \n", count);
+
+//CAPTURE
+	down_interruptible(&SemWriteBuf); 	//test
+	down_interruptible(&SemBuf); 		//test
+
+	nb_chaine=count/Buffer.BufSize;	//nb chaine totales
+	printk(KERN_WARNING "Buffer_circulaire WRITE: nb_chaine=%d \n", nb_chaine);
+		
+while(no_chaine<=nb_chaine){
+	/*	Relache le buffer entre chaques chaines?? nécessaire?? a voir! 
+		(p-e intéressant pour éviter l'interblocage si READER = BLOCK et WRITER=BLOCK*/
+	//down_interruptible(&SemWriteBuf); 	
+	//down_interruptible(&SemBuf);
+
+//Nombres de CHARs à transférer pour ce no_chaine.
+	if(no_chaine<nb_chaine){
+		nb_char=Buffer.BufSize;
+	}
+	else{
+		nb_char=count%Buffer.BufSize; //derniere chaine
+	} printk(KERN_WARNING "Buffer_circulaire WRITE: no_chaine=%d nb_char=%d \n", no_chaine,nb_char);
+
+//écriture dans WriteBuf
+	temp=no_chaine*Buffer.BufSize; 
+	printk(KERN_WARNING "Buffer_circulaire WRITE: ubuf start at=%d \n",temp);
+	char_miss=copy_from_user(BDev.WriteBuf,&ubuf[temp],nb_char);
 	printk(KERN_WARNING "Buffer_circulaire WRITE: bytes missed in WriteBuf %lu \n", char_miss);
 
-	//écriture dans le Buffer circulaire
-	down_interruptible(&SemBuf);
-	printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer circulaire capture \n");
-
-
-		while(char_write<count)
+//écriture dans le Buffer circulaire
+		char_write=0;
+		while(char_write<nb_char)
 		{
-			printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans WriteBuf \n",BDev.WriteBuf[char_write]);
-		
+			printk(KERN_WARNING "Buffer_circulaire WRITE: IN char_write= %d, char=%c \n",char_write,BDev.WriteBuf[char_write]);
+			//printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans WriteBuf \n",BDev.WriteBuf[char_write]);
 			res=BufIn(&Buffer,&(BDev.WriteBuf[char_write]));
 			if(res!=0)//0=OK, -1 = Full
 			{
 			//BUFFER = FULL
-
+			printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer FULL! \n");
 				//NON-BLOQUANT
 				if(flip->f_flags & O_NONBLOCK){
 					printk(KERN_WARNING "Buffer_circulaire WRITE: Non Bloquant \n");
@@ -371,18 +412,23 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 			}
 			char_write++;
 		}
-		//fin d'une écriture OU Buffer circulaire full-> Wake READ!
-		printk(KERN_WARNING "Buffer_circulaire WRITE: Wake READ_Queue \n");		
-		wake_up(&READ_Queue);
+		no_chaine++;
+}
 
+//fin d'une écriture OU Buffer full-> Wake READ!
+	printk(KERN_WARNING "Buffer_circulaire WRITE: Wake READ_Queue \n");		
+	wake_up(&READ_Queue);
+
+	char_total=(no_chaine-1)*Buffer.BufSize+char_write;
 	printk(KERN_WARNING "Buffer_circulaire WRITE: end InIdx=%d\n",Buffer.InIdx);
+
+//RELACHE
 	up(&SemBuf);
 	up(&SemWriteBuf);
-	
-	printk(KERN_WARNING "Buffer_circulaire WRITE: end char_write=%d\n",char_write);	
 
-	if (char_write)	
-		return char_write;
+	printk(KERN_WARNING "Buffer_circulaire WRITE: end char_total=%d\n",char_total);	
+	if (char_total)
+		return char_total;
 	else
 		return -EAGAIN;		
 }
@@ -391,6 +437,69 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 
 
 long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
+/*Commande (cmd) :	1-> GetNumData
+					2-> GetNumReader
+					3->	GetBufSize
+					4-> SetBufSize
+*/
+//Variables locales
+int nb_data;
+
+printk(KERN_WARNING "Buffer_circulaire IOCTL: Begin cmd=%d\n",cmd);
+//Commandes
+switch (cmd){
+
+//GetNumData
+	case GET_NUM_DATA:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumData\n");
+	
+	down_interruptible(&SemBuf);
+	nb_data=Buffer.OutIdx-Buffer.InIdx;
+	up(&SemBuf);
+	put_user(nb_data,&arg);
+
+	return 1;
+	}
+
+//GetNumReader
+	case GET_NUM_READER:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumReader\n");
+	
+ 	down_interruptible(&SemBDev);
+	put_user(BDev.numReader,&arg);
+	up(&SemBDev);
+
+	return 1;
+	}
+
+//GetBufSize
+	case GET_BUF_SIZE:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize\n");
+
+	/*Amélioration :peut-etre mettre un RWsem pour le BufSize -> beaucoup de lecture, peu d'écriture*/
+	down_interruptible(&SemBuf);
+	put_user(Buffer.BufSize,&arg);
+	up(&SemBuf);
+
+	return 1;
+	}
+
+//SetBufSize
+	case SET_BUF_SIZE:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize, PERM=\n");
+	//Vérifier la permission
+	if(!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	
+	return 1;
+	}
+	
+	default:{
+	return -ENOTTY;	
+	}
+}
+
+
 	return 0;
 }
 
