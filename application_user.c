@@ -3,6 +3,8 @@
 #include <linux/stat.h>
 #include <string.h>
 #include <stdlib.h>
+#include "ioctl_cmd.h"
+#include <sys/ioctl.h>
 
 #define BUF_SIZE 256
 
@@ -12,6 +14,8 @@ int nb_data=0;
 int hd_pilote;
 int data_trnsf;
 int i=0;
+int data;
+int res;
 
 void affiche_menu(){
 	
@@ -23,7 +27,11 @@ void affiche_menu(){
 		printf("	1	: LECTURE en mode Bloquant\n");
 		printf("	2	: LECTURE en mode NON-Bloquant\n");
 		printf("	3	: ECRITURE en mode Bloquant\n");
-		printf("	4	: ECRITURE en mode NON-Bloquant\n");
+		printf("	4	: ECRITURE en mode NON-Bloquant\n\n");
+		printf("	5	: IOCTL GetNumData\n");
+		printf("	6	: IOCTL GetNumReader\n");
+		printf("	7	: IOCTL GetBufSize\n");
+		printf("	8	: IOCTL SetBufSize\n\n");
 		printf("	m	: afficher le menu\n");
 		printf("	q	: quitter\n");
 }
@@ -78,6 +86,7 @@ while(commande!='q'){
 			printf("\nnombre de data lue: %d \n",data_trnsf);
 			nb_data=strlen(app_buf);
 			printf("nb data de la string : %d \n",nb_data);	
+			app_buf[data_trnsf]='\0';			
 			printf("data : %s \n",app_buf);
 	
 		}
@@ -129,6 +138,78 @@ while(commande!='q'){
 		printf("-----------------------------------------\n");
 		break;}
 
+	case '5':{
+		printf("\n\n\nIOCTL : GetNumData\n");
+		printf("-----------------------------------------\n");
+		
+		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
+		if(hd_pilote>0){		
+			res=ioctl(hd_pilote,GET_NUM_DATA,data);
+			close(hd_pilote);
+			printf("data: %d \n",data);
+			printf("res: %d \n",res);
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
+		break;
+		}
+
+	case '6':{
+		printf("\n\n\nIOCTL : GetNumReader\n");
+		printf("-----------------------------------------\n");
+		
+		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
+		if(hd_pilote>0){		
+			res=ioctl(hd_pilote,GET_NUM_READER,data);
+			close(hd_pilote);
+			printf("data: %d \n",data);
+			printf("res: %d \n",res);
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
+		break;
+		}
+
+	case '7':{
+		printf("\n\n\nIOCTL : GetBufSize\n");
+		printf("-----------------------------------------\n");
+		
+		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
+		if(hd_pilote>0){		
+			res=ioctl(hd_pilote,GET_BUF_SIZE,data);
+			close(hd_pilote);
+			printf("data: %d \n",data);
+			printf("res: %d \n",res);
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
+		break;
+		}
+
+	case '8':{
+		printf("\n\n\nIOCTL : SetBufSize\n");
+		printf("-----------------------------------------\n");
+		printf("Entrez la nouvelle valeur du Buffer: ");
+		scanf("%d",&data);
+		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
+		if(hd_pilote>0){		
+			res=ioctl(hd_pilote,SET_BUF_SIZE,data);
+			close(hd_pilote);
+			printf("data: %d \n",data);
+			printf("res: %d \n",res);
+		}
+		else{
+			printf("incapable d'ouvrir le pilote! \n");
+		}
+		printf("-----------------------------------------\n");
+		break;
+		}
 	case 'm':{
 		affiche_menu();
 		break;}

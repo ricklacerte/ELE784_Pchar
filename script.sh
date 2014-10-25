@@ -2,7 +2,7 @@
 make clean
 make
 echo "===> clear du dmesg"
-sudo dmesg -c > /dev/null
+#sudo dmesg -c > /dev/null
 echo "===>  suppr du module"
 sudo rmmod p_char
 echo "===> affichage du dmesg + grep + grep exit"

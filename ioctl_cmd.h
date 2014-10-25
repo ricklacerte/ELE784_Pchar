@@ -1,0 +1,7 @@
+//IOCTL CMD
+#define MAGIC_NUMBER		'p'
+#define GET_NUM_DATA		_IOR(MAGIC_NUMBER,1,int)
+#define GET_NUM_READER		_IOR(MAGIC_NUMBER,2,int)
+#define GET_BUF_SIZE		_IOR(MAGIC_NUMBER,3,int)
+#define SET_BUF_SIZE		_IOW(MAGIC_NUMBER,4,int)
+

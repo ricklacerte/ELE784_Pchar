@@ -35,9 +35,8 @@ struct file_operations Buf_fops ={
 };
 
 //déclaration des semaphores
-
-struct semaphore    SemBuf;
-struct semaphore    SemBDev;
+struct semaphore	SemBuf;
+struct semaphore	SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
 
@@ -243,6 +242,7 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	int err=0;
 	int char_total=0;
 	int while_flag=1;
+
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
 	printk(KERN_WARNING "Buffer_circulaire READ: CHAR to read=%d \n",count);
@@ -265,6 +265,7 @@ while(no_chaine<=nb_chaine && while_flag){
 		nb_char=count%DEFAULT_RWSIZE; //derniere chaine
 	}
 	printk(KERN_WARNING "Buffer_circulaire READ: no_chaine=%d nb_char=%d \n", no_chaine,nb_char);
+
 
 	char_read=0;
 
@@ -345,6 +346,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	
 	unsigned int char_write=0;
 	unsigned int char_miss=0;
+
 	int res;
 	int temp=0;
 	
@@ -419,7 +421,6 @@ while(no_chaine<=nb_chaine && while_flag){
 			}
 			char_write++;
 		}
-
 		no_chaine++;
 		if(while_flag<1) break;
 }
@@ -446,6 +447,69 @@ while(no_chaine<=nb_chaine && while_flag){
 
 
 long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
+/*Commande (cmd) :	1-> GetNumData
+					2-> GetNumReader
+					3->	GetBufSize
+					4-> SetBufSize
+*/
+//Variables locales
+int nb_data;
+
+printk(KERN_WARNING "Buffer_circulaire IOCTL: Begin cmd=%d\n",cmd);
+//Commandes
+switch (cmd){
+
+//GetNumData
+	case GET_NUM_DATA:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumData\n");
+	
+	down_interruptible(&SemBuf);
+	nb_data=Buffer.OutIdx-Buffer.InIdx;
+	up(&SemBuf);
+	put_user(nb_data,&arg);
+
+	return 1;
+	}
+
+//GetNumReader
+	case GET_NUM_READER:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumReader\n");
+	
+ 	down_interruptible(&SemBDev);
+	put_user(BDev.numReader,&arg);
+	up(&SemBDev);
+
+	return 1;
+	}
+
+//GetBufSize
+	case GET_BUF_SIZE:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize\n");
+
+	/*Amélioration :peut-etre mettre un RWsem pour le BufSize -> beaucoup de lecture, peu d'écriture*/
+	down_interruptible(&SemBuf);
+	put_user(Buffer.BufSize,&arg);
+	up(&SemBuf);
+
+	return 1;
+	}
+
+//SetBufSize
+	case SET_BUF_SIZE:{
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize, PERM=\n");
+	//Vérifier la permission
+	if(!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	
+	return 1;
+	}
+	
+	default:{
+	return -ENOTTY;	
+	}
+}
+
+
 	return 0;
 }
 

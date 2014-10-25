@@ -3,10 +3,14 @@
 #define DEV_CNT	1
 #define MOD_NAME	"etsele_cdev"
 
+
 #define DEFAULT_RWSIZE 16
 #define DEFAULT_BUFSIZE 32
 
 #define BUF_DATA_TYPE char
+
+#include "ioctl_cmd.h"
+
 
 // ************************ Structures ********************************
 struct BufStruct {
