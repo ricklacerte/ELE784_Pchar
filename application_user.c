@@ -51,6 +51,7 @@ while(commande!='q'){
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY),S_IRUSR);
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
+			app_buf[data_trnsf]='\0';
 			printf("\nnombre de data recue: %d \n",data_trnsf);
 			printf("data : %s \n",app_buf);
 			close(hd_pilote);		
@@ -67,12 +68,13 @@ while(commande!='q'){
 		printf("\n\n\nLECTURE NON-BLOQUANTE\n");
 		printf("-----------------------------------------\n");
 		printf("Entrez le nombre de données à lire: ");
-		scanf("%d",&nb_data);
+		scanf(" %d",&nb_data);
 
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
 			close(hd_pilote);
+			app_buf[data_trnsf]='\0';
 			printf("\nnombre de data lue: %d \n",data_trnsf);
 			nb_data=strlen(app_buf);
 			printf("nb data de la string : %d \n",nb_data);	

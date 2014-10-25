@@ -1,0 +1,1 @@
+cmd_/home/fabien/ele784/ELE784_Pchar/p_char.ko := ld -r -m elf_i386 -T /usr/src/linux-source-3.2.0/scripts/module-common.lds --build-id  -o /home/fabien/ele784/ELE784_Pchar/p_char.ko /home/fabien/ele784/ELE784_Pchar/p_char.o /home/fabien/ele784/ELE784_Pchar/p_char.mod.o
