@@ -454,6 +454,7 @@ long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 */
 //Variables locales
 int nb_data;
+int res;
 
 printk(KERN_WARNING "Buffer_circulaire IOCTL: Begin cmd=%d\n",cmd);
 //Commandes
@@ -464,10 +465,11 @@ switch (cmd){
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumData\n");
 	
 	down_interruptible(&SemBuf);
-	nb_data=Buffer.OutIdx-Buffer.InIdx;
+	nb_data=Buffer.InIdx-Buffer.OutIdx;
 	up(&SemBuf);
-	put_user(nb_data,&arg);
-
+	res=put_user(nb_data,(int*)arg);
+	//res=copy_to_user(&arg,&nb_data,4);
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: data=%d, res=%d\n",nb_data,res);
 	return 1;
 	}
 
@@ -476,7 +478,7 @@ switch (cmd){
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumReader\n");
 	
  	down_interruptible(&SemBDev);
-	put_user(BDev.numReader,&arg);
+	put_user(BDev.numReader,(int*)arg);
 	up(&SemBDev);
 
 	return 1;
@@ -488,7 +490,7 @@ switch (cmd){
 
 	/*Amélioration :peut-etre mettre un RWsem pour le BufSize -> beaucoup de lecture, peu d'écriture*/
 	down_interruptible(&SemBuf);
-	put_user(Buffer.BufSize,&arg);
+	put_user(Buffer.BufSize,(int*)arg);
 	up(&SemBuf);
 
 	return 1;

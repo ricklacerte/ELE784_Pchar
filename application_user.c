@@ -141,11 +141,11 @@ while(commande!='q'){
 	case '5':{
 		printf("\n\n\nIOCTL : GetNumData\n");
 		printf("-----------------------------------------\n");
-		
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){		
-			res=ioctl(hd_pilote,GET_NUM_DATA,data);
+			res=ioctl(hd_pilote,GET_NUM_DATA,&data);
 			close(hd_pilote);
+			
 			printf("data: %d \n",data);
 			printf("res: %d \n",res);
 		}
@@ -162,7 +162,7 @@ while(commande!='q'){
 		
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){		
-			res=ioctl(hd_pilote,GET_NUM_READER,data);
+			res=ioctl(hd_pilote,GET_NUM_READER,&data);
 			close(hd_pilote);
 			printf("data: %d \n",data);
 			printf("res: %d \n",res);
@@ -180,7 +180,7 @@ while(commande!='q'){
 		
 		hd_pilote=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
 		if(hd_pilote>0){		
-			res=ioctl(hd_pilote,GET_BUF_SIZE,data);
+			res=ioctl(hd_pilote,GET_BUF_SIZE,&data);
 			close(hd_pilote);
 			printf("data: %d \n",data);
 			printf("res: %d \n",res);
@@ -199,7 +199,7 @@ while(commande!='q'){
 		scanf("%d",&data);
 		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
 		if(hd_pilote>0){		
-			res=ioctl(hd_pilote,SET_BUF_SIZE,data);
+			res=ioctl(hd_pilote,SET_BUF_SIZE,&data);
 			close(hd_pilote);
 			printf("data: %d \n",data);
 			printf("res: %d \n",res);
