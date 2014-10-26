@@ -61,6 +61,7 @@ while(commande!='q'){
 			data_trnsf=read(hd_pilote,app_buf,nb_data);
 			app_buf[data_trnsf]='\0';
 			printf("\nnombre de data recue: %d \n",data_trnsf);
+			app_buf[data_trnsf]='\0';
 			printf("data : %s \n",app_buf);
 			close(hd_pilote);		
 		}
