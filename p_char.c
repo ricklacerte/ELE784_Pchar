@@ -42,10 +42,6 @@ struct semaphore	SemReadBuf;
 
 // déclaration des variables atomiques
 
-atomic_t BUFFER_SIZE =ATOMIC_INIT(16);
-atomic_t wait_data_write = ATOMIC_INIT(0);
-atomic_t wait_data_read = ATOMIC_INIT(0);
-
 // file d'attente (BLOQUANT)
 //struct wait_queue_head_t READ_Queue;
 DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
@@ -442,6 +438,7 @@ long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 //Variables locales
 int nb_data;
 int res;
+int i;
 
 printk(KERN_WARNING "Buffer_circulaire IOCTL: Begin cmd=%d\n",cmd);
 //Commandes
@@ -452,7 +449,14 @@ switch (cmd){
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetNumData\n");
 	
 	down_interruptible(&SemBuf);
-	nb_data=Buffer.InIdx-Buffer.OutIdx;
+	if(Buffer.BufFull==1)
+		nb_data=Buffer.BufSize;
+	else if(Buffer.OutIdx>Buffer.InIdx)
+			nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
+		else			
+			nb_data=Buffer.InIdx-Buffer.OutIdx;
+	
+
 	up(&SemBuf);
 	res=put_user(nb_data,(int*)arg);
 	//res=copy_to_user(&arg,&nb_data,4);
@@ -497,8 +501,49 @@ switch (cmd){
 		printk(KERN_WARNING "Buffer_circulaire IOCTL: ACCESS!\n");
 	}
 	
+	down_interruptible(&SemBuf);
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
+		//recuperation du nombre de data dans le buffer
+	if(Buffer.BufFull==1)
+		nb_data=Buffer.BufSize;
+	else if(Buffer.OutIdx>Buffer.InIdx)
+			nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
+		else			
+			nb_data=Buffer.InIdx-Buffer.OutIdx;
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
 	
-	
+		
+	if(nb_data>arg){
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer nb_data>arg\n");
+		return -EAGAIN;
+	}
+
+
+	if(arg>=Buffer.BufSize){
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin realloc\n");
+
+		krealloc(&(Buffer.Buffer),sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+		Buffer.BufSize=(unsigned int)arg;
+	}
+	else{
+		//on decalle nos data, on replace nos index, on free le surplus
+		
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin resize\n");
+
+		//décalage des données
+		for(i=0;i<nb_data;i++){
+			Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
+		}
+		//replacement des index
+		Buffer.OutIdx=0;
+		Buffer.InIdx=nb_data;
+		Buffer.BufSize=arg;
+		kfree(&(Buffer.Buffer[arg]));
+	}
+		
+		
+
+	up(&SemBuf);
 	
 	return 1;
 	}

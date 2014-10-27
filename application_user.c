@@ -196,11 +196,11 @@ while(commande!='q'){
 	case '8':{
 		printf("\n\n\nIOCTL : SetBufSize\n");
 		printf("-----------------------------------------\n");
-		printf("Entrez la nouvelle valeur du Buffer: ");
+		printf("Entrez la nouvelle valeur du Buffer: \n");
 		scanf("%d",&data);
 		hd_pilote=open("/dev/etsele_cdev",(O_WRONLY | O_NONBLOCK),S_IWUSR);
 		if(hd_pilote>0){		
-			res=ioctl(hd_pilote,SET_BUF_SIZE,&data);
+			res=ioctl(hd_pilote,SET_BUF_SIZE,data);
 			close(hd_pilote);
 			printf("data: %d \n",data);
 			printf("res: %d \n",res);
