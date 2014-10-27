@@ -234,9 +234,9 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
  	
 	// Variables LOCALES
  	int no_char=0;
-	int no_chaine=0;
 	int err=0;
 	int char_total=0;
+	int res=0;
 
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
@@ -248,16 +248,14 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 
 	printk(KERN_WARNING "Buffer_circulaire READ: init, count=%d \n",count);
 
-while((no_chaine*DEFAULT_RWSIZE+no_char)<count){
+while((char_total + no_char)<count){
 
 	// READBuffer plein! READBuf-> user
 	if(no_char==DEFAULT_RWSIZE){ 
 		//ENVOYER READBuf au USER
-		err+=copy_to_user(&ubuf[no_chaine*Buffer.BufSize],BDev.ReadBuf,no_char);
+		err+=copy_to_user(&ubuf[char_total],BDev.ReadBuf,no_char);
 		char_total+=no_char-err;
-		printk(KERN_WARNING "Buffer_circulaire READ: RDBufFULL->user, ubuf =%d, char_total=%d \n",(no_chaine*Buffer.BufSize),char_total);
-
-		no_chaine++;
+		printk(KERN_WARNING "Buffer_circulaire READ: RDBufFULL->user, ubuf =%d \n",char_total);
 		no_char=0;
 
 		printk(KERN_WARNING "Buffer_circulaire READ: OutIdx =%d \n", Buffer.OutIdx);
@@ -270,52 +268,62 @@ while((no_chaine*DEFAULT_RWSIZE+no_char)<count){
 
 	//Buffer = vide!
 	if (BufOut(&Buffer,&BDev.ReadBuf[no_char])!=0){ 
-		printk(KERN_WARNING "Buffer_circulaire READ: Buffer vide!\n");
+		printk(KERN_WARNING "Buffer_circulaire READ: Buffer maintenant vide!\n");
+		
+		//CHARS lus
+		if(char_total | no_char){
+			printk(KERN_WARNING "Buffer_circulaire READ: satisfait partiellement\n");
+			break; 
+		}
 		
 		//MODE : NON BLOQUANT
-		if(flip->f_flags & O_NONBLOCK){
+		if(flip->f_flags & O_NONBLOCK ){
 			printk(KERN_WARNING "Buffer_circulaire READ: Non Bloquant\n");	
 			break;			
 		}
-
 		//MODE : BLOQUANT
-		else{
+	else{
 			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK\n");
+
 			while(Buffer.BufEmpty==1){
 				//RELACHE
-				up(&SemBuf); 
+				 
 				//up(&SemReadBuf);
-			
-				//GOOD NIGHT 
-				printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
-				wait_event_interruptible(READ_Queue,Buffer.BufEmpty!=1); 
-		
+				printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d)SLEEP, BufEmpty=%d, res=%d",current->comm,current->pid,Buffer.BufEmpty,res);
+				up(&SemBuf);
+
+				//GOOD NIGHT!
+				wait_event(READ_Queue,Buffer.BufEmpty==0); // sinon cat se fait réveiller par un signal...
+
 				//CAPTURE
 				//down_interruptible(&SemReadBuf); ----> ***question si libère = pertes du data de READBuf, si ne libère pas = aucuns autres lecteurs peut ouvrir READ!
 				down_interruptible(&SemBuf);
 			}
-			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d)AWAKEN",current->comm,current->pid);			
+			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d), res= %d, AWAKEN\n",current->comm,current->pid,res);	
+			no_char=-1;		//éliminer le no_char++; 
 			}
-		}
-	printk(KERN_WARNING "Buffer_circulaire READ: no_char= %d, char=%c \n",no_char,BDev.ReadBuf[no_char]);
+	}
 	no_char++;
+	//printk(KERN_WARNING "Buffer_circulaire READ: no_char= %d, char=%c \n",no_char,BDev.ReadBuf[no_char]);
 }
+
 
 //restant READBuf-> user
 if (no_char){
 	//ENVOYER READBuf au USER
-	err+=copy_to_user(&ubuf[no_chaine*Buffer.BufSize],BDev.ReadBuf,no_char);
-	printk(KERN_WARNING "Buffer_circulaire READ: READBuf->user, ubuf =%d, no_char=%d, err=%d \n",(no_chaine*Buffer.BufSize),no_char,err);
+	err+=copy_to_user(&ubuf[char_total],BDev.ReadBuf,no_char);
+	printk(KERN_WARNING "Buffer_circulaire READ: READBuf->user, ubuf =%d, no_char=%d, err=%d \n",char_total,no_char,err);
 	char_total+=no_char-err;
 	printk(KERN_WARNING "Buffer_circulaire READ: end, OutIdx =%d \n", Buffer.OutIdx);
 
 	//RELACHE BUFFER (pour écrivain)
-	up(&SemBuf); 
+	
 	printk(KERN_WARNING "Buffer_circulaire READ: Wake Write_Queue \n");		
 	wake_up(&WRITE_Queue);
 
 }
 
+up(&SemBuf); 
 up(&SemReadBuf);
 printk(KERN_WARNING "Buffer_circulaire READ: end, Char lue =%d \n", char_total);
 
