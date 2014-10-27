@@ -237,11 +237,9 @@ ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_o
 	int err=0;
 	int char_total=0;
 	int res=0;
-
  	
  	printk(KERN_WARNING "Buffer_circulaire READ: Begin");
 
-	
 //CAPTURE
 	down_interruptible(&SemReadBuf);
 	down_interruptible(&SemBuf);
@@ -287,8 +285,7 @@ while((char_total + no_char)<count){
 
 			while(Buffer.BufEmpty==1){
 				//RELACHE
-				 
-				//up(&SemReadBuf);
+				up(&SemReadBuf);
 				printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d)SLEEP, BufEmpty=%d, res=%d",current->comm,current->pid,Buffer.BufEmpty,res);
 				up(&SemBuf);
 
@@ -296,7 +293,7 @@ while((char_total + no_char)<count){
 				wait_event(READ_Queue,Buffer.BufEmpty==0); // sinon cat se fait réveiller par un signal...
 
 				//CAPTURE
-				//down_interruptible(&SemReadBuf); ----> ***question si libère = pertes du data de READBuf, si ne libère pas = aucuns autres lecteurs peut ouvrir READ!
+				down_interruptible(&SemReadBuf);//
 				down_interruptible(&SemBuf);
 			}
 			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d), res= %d, AWAKEN\n",current->comm,current->pid,res);	
@@ -307,7 +304,6 @@ while((char_total + no_char)<count){
 	//printk(KERN_WARNING "Buffer_circulaire READ: no_char= %d, char=%c \n",no_char,BDev.ReadBuf[no_char]);
 }
 
-
 //restant READBuf-> user
 if (no_char){
 	//ENVOYER READBuf au USER
@@ -316,11 +312,8 @@ if (no_char){
 	char_total+=no_char-err;
 	printk(KERN_WARNING "Buffer_circulaire READ: end, OutIdx =%d \n", Buffer.OutIdx);
 
-	//RELACHE BUFFER (pour écrivain)
-	
 	printk(KERN_WARNING "Buffer_circulaire READ: Wake Write_Queue \n");		
 	wake_up(&WRITE_Queue);
-
 }
 
 up(&SemBuf); 
@@ -332,12 +325,7 @@ if(char_total)
 	return char_total;	
 else
 	return -EAGAIN;
-
 }
-
-
-
-
 
 
 
@@ -497,10 +485,20 @@ switch (cmd){
 
 //SetBufSize
 	case SET_BUF_SIZE:{
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize, PERM=\n");
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: SetBufSize\n");
+	res=capable(CAP_SYS_ADMIN);
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: SetBufSize cap=%d\n",res);
 	//Vérifier la permission
-	if(!capable(CAP_SYS_ADMIN))
+	if(res){
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: PAS ACCESS!\n");
 		return -EPERM;
+	}
+	else{
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: ACCESS!\n");
+	}
+	
+	
+	
 	
 	return 1;
 	}

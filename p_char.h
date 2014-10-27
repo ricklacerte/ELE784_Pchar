@@ -5,7 +5,9 @@
 #define DEFAULT_RWSIZE 16
 #define DEFAULT_BUFSIZE 32
 #define BUF_DATA_TYPE char
+
 #include "ioctl_cmd.h"
+
 // ************************ Structures ********************************
 struct BufStruct {
 unsigned int InIdx;
