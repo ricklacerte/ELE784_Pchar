@@ -503,7 +503,8 @@ switch (cmd){
 	
 	down_interruptible(&SemBuf);
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
-		//recuperation du nombre de data dans le buffer
+	
+	//recuperation du nombre de data dans le buffer
 	if(Buffer.BufFull==1)
 		nb_data=Buffer.BufSize;
 	else if(Buffer.OutIdx>Buffer.InIdx)
@@ -512,37 +513,39 @@ switch (cmd){
 			nb_data=Buffer.InIdx-Buffer.OutIdx;
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
 	
-		
+	//Perte data (nb_data > new size) 		
 	if(nb_data>arg){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer nb_data>arg\n");
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer! nb_data>arg\n");
+		up(&SemBuf);
 		return -EAGAIN;
 	}
-
-
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: INIT OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+	
+	//SUPERSIZE
 	if(arg>=Buffer.BufSize){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin realloc\n");
-
-		krealloc(&(Buffer.Buffer),sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE\n");
+		krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+		Buffer.InIdx=(Buffer.OutIdx+nb_data)%arg; // si Buffer plein
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
 		Buffer.BufSize=(unsigned int)arg;
 	}
+
+	//DOWNSIZE
 	else{
-		//on decalle nos data, on replace nos index, on free le surplus
-		
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin resize\n");
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE\n");
 
 		//décalage des données
 		for(i=0;i<nb_data;i++){
 			Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
 		}
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, start=%d,end=%d \n",Buffer.OutIdx,(i+Buffer.OutIdx));
 		//replacement des index
 		Buffer.OutIdx=0;
 		Buffer.InIdx=nb_data;
 		Buffer.BufSize=arg;
 		kfree(&(Buffer.Buffer[arg]));
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
 	}
-		
-		
-
 	up(&SemBuf);
 	
 	return 1;
