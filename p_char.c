@@ -46,6 +46,8 @@ struct semaphore	SemReadBuf;
 //struct wait_queue_head_t READ_Queue;
 DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
 DECLARE_WAIT_QUEUE_HEAD(WRITE_Queue);
+DECLARE_WAIT_QUEUE_HEAD(RELEASE_Queue);
+
 
 
 
@@ -68,6 +70,8 @@ static int __init buf_init(void){
 	//DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
 	init_waitqueue_head(&READ_Queue);
 	init_waitqueue_head(&WRITE_Queue);
+	init_waitqueue_head(&RELEASE_Queue);
+	
 
 	
 ///initialisation du BDev
@@ -77,6 +81,7 @@ static int __init buf_init(void){
 	//sema_init(&BDev.SemBuf,1);
 	BDev.numWriter=0;
 	BDev.numReader=0;
+	BDev.numUser=0;
 
 ///initialisation du BufStruct
 	Buffer.InIdx=0;//write
@@ -132,20 +137,34 @@ int buf_open(struct inode *inode, struct file *flip){
 	printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
 	
 
-	//BDev = container_of(inode->i_cdev, struct Buf_Dev*, cdev);	
 	flip->private_data=&BDev;
+	
+	if(BDev.numUser>=MAX_USER)
+		{
+			if(flip->f_flags & O_NONBLOCK)
+				return -EBUSY;
+			else
+			{
+				up(&SemBDev);
+				wait_event(RELEASE_Queue,BDev.numUser<MAX_USER-1);
+				
+			}
+		}
+	
 
 // Vérifie le MODE du USER
 	
-	switch (flip->f_flags & O_ACCMODE){ // mask sur les access
+	switch (flip->f_flags & O_ACCMODE){ // masque sur les access
 		case O_RDONLY:
 			BDev.numReader ++;
+			BDev.numUser++;
 			printk(KERN_WARNING "Buffer_circulaire OPEN : as RDONLY\n");
 			break;
 
 		case O_WRONLY:
 			if (!BDev.numWriter){
 				BDev.numWriter ++;
+				BDev.numUser++;
 				printk(KERN_WARNING "Buffer_circulaire OPEN : as WRONLY\n");
 				}
 			else{
@@ -158,6 +177,7 @@ int buf_open(struct inode *inode, struct file *flip){
 			if (!BDev.numWriter){
 				BDev.numWriter ++;
 				BDev.numReader ++;
+				BDev.numUser++;
 				printk(KERN_WARNING "Buffer_circulaire OPEN :as RDWR\n");	
 			}			
 			else{
@@ -210,9 +230,10 @@ int buf_release(struct inode *inode, struct file *flip){
 				up(&SemBDev);
 				return -ENOTSUPP;				
 	}
-
+	BDev.numUser--;
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: end numWriter=%d numReader=%d\n",BDev.numWriter,BDev.numReader);			
 	up(&SemBDev);
+	wake_up(&RELEASE_Queue);
 	
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: end\n");	
 	return 0;
@@ -500,47 +521,52 @@ switch (cmd){
 			printk(KERN_WARNING "Buffer_circulaire IOCTL: ACCESS!\n");
 		}
 	
-		down_interruptible(&SemBuf);
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
 
-		//recuperation du nombre de data dans le buffer
-		if(Buffer.BufFull==1)
-			nb_data=Buffer.BufSize;
-		else if(Buffer.OutIdx>Buffer.InIdx)
-				nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
-			else			
-				nb_data=Buffer.InIdx-Buffer.OutIdx;
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
+	down_interruptible(&SemBuf);
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
 	
-		
-		// New size : invalide
-		if(nb_data>arg){
-			printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer nb_data>arg\n");
-			return -EAGAIN;
-		}
+	//recuperation du nombre de data dans le buffer
+	if(Buffer.BufFull==1)
+		nb_data=Buffer.BufSize;
+	else if(Buffer.OutIdx>Buffer.InIdx)
+			nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
+		else			
+			nb_data=Buffer.InIdx-Buffer.OutIdx;
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
+	
+	//Perte data (nb_data > new size) 		
+	if(nb_data>arg){
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer! nb_data>arg\n");
+		up(&SemBuf);
+		return -EAGAIN;
+	}
+	printk(KERN_WARNING "Buffer_circulaire IOCTL: INIT OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+	
+	//SUPERSIZE
+	if(arg>=Buffer.BufSize){
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE\n");
+		krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+		Buffer.InIdx=(Buffer.OutIdx+nb_data)%arg; // si Buffer plein
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+		Buffer.BufSize=(unsigned int)arg;
+	}
 
-		//SUPERSIZE
-		if(arg>=Buffer.BufSize){
-			printk(KERN_WARNING "Buffer_circulaire IOCTL: begin realloc\n");
-			krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
-			Buffer.BufSize=(unsigned int)arg;
-		}
+	//DOWNSIZE
+	else{
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE\n");
 
-		//DOWNSIZE
-		else{
-			//on decalle nos data, on replace nos index, on free le surplus
-			printk(KERN_WARNING "Buffer_circulaire IOCTL: begin resize\n");
-
-			//décalage des données
-			for(i=0;i<nb_data;i++){
-				Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
-			}
-			//replacement des index
-			Buffer.OutIdx=0;
-			Buffer.InIdx=nb_data;
-			Buffer.BufSize=arg;
-			kfree(&(Buffer.Buffer[arg]));
+		//décalage des données
+		for(i=0;i<nb_data;i++){
+			Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
 		}
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, start=%d,end=%d \n",Buffer.OutIdx,(i+Buffer.OutIdx));
+		//replacement des index
+		Buffer.OutIdx=0;
+		Buffer.InIdx=nb_data;
+		Buffer.BufSize=arg;
+		kfree(&(Buffer.Buffer[arg]));
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+	}
 
 	up(&SemBuf);
 	return 1;

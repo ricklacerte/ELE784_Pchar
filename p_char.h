@@ -5,6 +5,7 @@
 #define DEFAULT_RWSIZE 16
 #define DEFAULT_BUFSIZE 32
 #define BUF_DATA_TYPE char
+#define MAX_USER 10
 
 #include "ioctl_cmd.h"
 
@@ -22,6 +23,7 @@ char	*ReadBuf;
 char *WriteBuf;
 unsigned short numWriter;
 unsigned short numReader;
+unsigned short numUser;
 struct class	*mclass;
 dev_t dev;
 struct cdev cdev;
