@@ -139,7 +139,7 @@ int buf_open(struct inode *inode, struct file *flip){
 
 	flip->private_data=&BDev;
 	
-	if(BDev.numUser+1>=MAX_USER)
+	if(BDev.numUser>=MAX_USER)
 		{
 			if(flip->f_flags & O_NONBLOCK)
 				return -EBUSY;

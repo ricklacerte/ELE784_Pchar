@@ -8,10 +8,13 @@
 
 #define BUF_SIZE 256
 
+
 char * app_buf = NULL;
 char commande='0';
+char open_mode;
 int nb_data=0;
 int hd_pilote;
+int tabFile[20];
 int data_trnsf;
 int i=0;
 int data;
@@ -32,6 +35,7 @@ void affiche_menu(){
 		printf("	6	: IOCTL GetNumReader\n");
 		printf("	7	: IOCTL GetBufSize\n");
 		printf("	8	: IOCTL SetBufSize\n\n");
+		printf("	d	: demonstration controle nombre d'usager");
 		printf("	m	: afficher le menu\n");
 		printf("	q	: quitter\n");
 }
@@ -211,6 +215,37 @@ while(commande!='q'){
 		printf("-----------------------------------------\n");
 		break;
 		}
+	case 'd' :
+		printf("\n\n\n demonstration du controle de nombre d'usager du module\n");
+		printf("-----------------------------------------\n");
+		printf("entrer le nombre d'usager\n");
+		scanf("%d",&nb_data);
+		printf("ouverture en mode bloquant? o/n\n");
+		scanf("%c",&open_mode);
+		if(nb_data>=20)
+			nb_data=20;
+		for(i=0;i<nb_data;i++){
+			printf("ouverture du module pour l'usager %d en mode lecture nonblocante\n",i);
+			if(open_mode=='n')
+				tabFile[i]=open("/dev/etsele_cdev",(O_RDONLY | O_NONBLOCK),S_IRUSR);
+			else if(open_mode=='o')
+				tabFile[i]=open("/dev/etsele_cdev",(O_RDONLY),S_IRUSR);
+				
+			if(tabFile[i]>0)
+				printf("ouverture du module réussi\n");
+			else{
+				printf("échec de l'ouverture erreur %d\n",tabFile[i]);
+				break;
+			}	
+		}
+		printf("l'ouverture du module a reussi pour %d usager à la suite\n",i+1);
+		printf("fermeture des fichiers\n");
+		for(i=0;i<nb_data;i++){
+			if(tabFile[i]>0)
+				close(tabFile[i]);
+		}		
+	
+		break;
 	case 'm':{
 		affiche_menu();
 		break;}
