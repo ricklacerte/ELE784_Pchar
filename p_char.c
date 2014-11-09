@@ -489,62 +489,60 @@ switch (cmd){
 
 //SetBufSize
 	case SET_BUF_SIZE:{
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: SetBufSize\n");
-	res=capable(CAP_SYS_ADMIN);
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: SetBufSize cap=%d\n",res);
-	//Vérifier la permission
-	if(res){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: PAS ACCESS!\n");
-		return -EPERM;
-	}
-	else{
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: ACCESS!\n");
-	}
-	
-	down_interruptible(&SemBuf);
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
-		//recuperation du nombre de data dans le buffer
-	if(Buffer.BufFull==1)
-		nb_data=Buffer.BufSize;
-	else if(Buffer.OutIdx>Buffer.InIdx)
-			nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
-		else			
-			nb_data=Buffer.InIdx-Buffer.OutIdx;
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
-	
-		
-	if(nb_data>arg){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer nb_data>arg\n");
-		return -EAGAIN;
-	}
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SetBufSize\n");
 
-
-	if(arg>=Buffer.BufSize){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin realloc\n");
-
-		krealloc(&(Buffer.Buffer),sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
-		Buffer.BufSize=(unsigned int)arg;
-	}
-	else{
-		//on decalle nos data, on replace nos index, on free le surplus
-		
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: begin resize\n");
-
-		//décalage des données
-		for(i=0;i<nb_data;i++){
-			Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
+		//Vérifier la permission
+		if(!capable(CAP_SYS_ADMIN)){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: PAS ACCESS!\n");
+			return -EPERM;
 		}
-		//replacement des index
-		Buffer.OutIdx=0;
-		Buffer.InIdx=nb_data;
-		Buffer.BufSize=arg;
-		kfree(&(Buffer.Buffer[arg]));
-	}
+		else{
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: ACCESS!\n");
+		}
+	
+		down_interruptible(&SemBuf);
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
+
+		//recuperation du nombre de data dans le buffer
+		if(Buffer.BufFull==1)
+			nb_data=Buffer.BufSize;
+		else if(Buffer.OutIdx>Buffer.InIdx)
+				nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
+			else			
+				nb_data=Buffer.InIdx-Buffer.OutIdx;
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
+	
 		
-		
+		// New size : invalide
+		if(nb_data>arg){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer nb_data>arg\n");
+			return -EAGAIN;
+		}
+
+		//SUPERSIZE
+		if(arg>=Buffer.BufSize){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: begin realloc\n");
+			krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+			Buffer.BufSize=(unsigned int)arg;
+		}
+
+		//DOWNSIZE
+		else{
+			//on decalle nos data, on replace nos index, on free le surplus
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: begin resize\n");
+
+			//décalage des données
+			for(i=0;i<nb_data;i++){
+				Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
+			}
+			//replacement des index
+			Buffer.OutIdx=0;
+			Buffer.InIdx=nb_data;
+			Buffer.BufSize=arg;
+			kfree(&(Buffer.Buffer[arg]));
+		}
 
 	up(&SemBuf);
-	
 	return 1;
 	}
 	
