@@ -4,4 +4,4 @@
 #define GET_NUM_READER		_IOR(MAGIC_NUMBER,2,int)
 #define GET_BUF_SIZE		_IOR(MAGIC_NUMBER,3,int)
 #define SET_BUF_SIZE		_IOW(MAGIC_NUMBER,4,int)
-
+#define SET_MAX_USER		_IOW(MAGIC_NUMBER,5,int)

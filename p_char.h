@@ -24,6 +24,7 @@ char *WriteBuf;
 unsigned short numWriter;
 unsigned short numReader;
 unsigned short numUser;
+unsigned short maxUser;
 struct class	*mclass;
 dev_t dev;
 struct cdev cdev;

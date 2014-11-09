@@ -40,10 +40,7 @@ struct semaphore	SemBDev;
 struct semaphore	SemWriteBuf;
 struct semaphore	SemReadBuf;
 
-// déclaration des variables atomiques
-
 // file d'attente (BLOQUANT)
-//struct wait_queue_head_t READ_Queue;
 DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
 DECLARE_WAIT_QUEUE_HEAD(WRITE_Queue);
 DECLARE_WAIT_QUEUE_HEAD(RELEASE_Queue);
@@ -82,6 +79,7 @@ static int __init buf_init(void){
 	BDev.numWriter=0;
 	BDev.numReader=0;
 	BDev.numUser=0;
+	BDev.maxUser=MAX_USER;
 
 ///initialisation du BufStruct
 	Buffer.InIdx=0;//write
@@ -122,39 +120,34 @@ static void __exit buf_exit(void){
 }
 
 
-
-
-
-
-
 int buf_open(struct inode *inode, struct file *flip){
 	
-	//struct Buf_Dev *BDev;
-	
 	printk(KERN_WARNING "Buffer_circulaire OPEN : begin\n");
-	
+
 	down_interruptible(&SemBDev);
-	printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
-	
 
 	flip->private_data=&BDev;
-	
-	if(BDev.numUser>=MAX_USER)
+		printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
+
+//NOMBRE DE USERS
+	if(BDev.numUser>=BDev.maxUser)
 		{
 			if(flip->f_flags & O_NONBLOCK)
 				return -EBUSY;
 			else
 			{
-				up(&SemBDev);
-				wait_event(RELEASE_Queue,BDev.numUser<MAX_USER-1);
-				
+				printk(KERN_WARNING "Buffer_circulaire OPEN :BLOCK Task(PROP=%s PID= %d)SLEEP \n",current->comm,current->pid);
+				while(BDev.numUser<(BDev.maxUser-1)){
+					up(&SemBDev);
+					wait_event(RELEASE_Queue,BDev.numUser<(BDev.maxUser-1));
+					down_interruptible(&SemBDev);
+				}
 			}
 		}
 	
 
-// Vérifie le MODE du USER
-	
-	switch (flip->f_flags & O_ACCMODE){ // masque sur les access
+//MODE DU USER
+	switch (flip->f_flags & O_ACCMODE){
 		case O_RDONLY:
 			BDev.numReader ++;
 			BDev.numUser++;
@@ -192,8 +185,7 @@ int buf_open(struct inode *inode, struct file *flip){
 	}
 	up(&SemBDev);
 	
-	printk(KERN_WARNING "Buffer_circulaire OPEN: END numWriter=%d numReader=%d\n",BDev.numWriter,BDev.numReader);
-	
+	printk(KERN_WARNING "Buffer_circulaire OPEN: END numWriter=%d numReader=%d numUser=%d\n",BDev.numWriter,BDev.numReader,BDev.numUser);
 	return 0;
 }
 
@@ -455,6 +447,7 @@ long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 					2-> GetNumReader
 					3->	GetBufSize
 					4-> SetBufSize
+					5-> 
 */
 //Variables locales
 int nb_data;
@@ -522,54 +515,73 @@ switch (cmd){
 		}
 	
 
-	down_interruptible(&SemBuf);
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
+		down_interruptible(&SemBuf);
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: new buf size : %lu\n",arg);
 	
-	//recuperation du nombre de data dans le buffer
-	if(Buffer.BufFull==1)
-		nb_data=Buffer.BufSize;
-	else if(Buffer.OutIdx>Buffer.InIdx)
-			nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
-		else			
-			nb_data=Buffer.InIdx-Buffer.OutIdx;
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
+		//recuperation du nombre de data dans le buffer
+		if(Buffer.BufFull==1)
+			nb_data=Buffer.BufSize;
+		else if(Buffer.OutIdx>Buffer.InIdx)
+				nb_data=Buffer.InIdx+Buffer.BufSize-Buffer.OutIdx;
+			else			
+				nb_data=Buffer.InIdx-Buffer.OutIdx;
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: data in Buffer : %d\n",nb_data);
 	
-	//Perte data (nb_data > new size) 		
-	if(nb_data>arg){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer! nb_data>arg\n");
-		up(&SemBuf);
-		return -EAGAIN;
-	}
-	printk(KERN_WARNING "Buffer_circulaire IOCTL: INIT OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
-	
-	//SUPERSIZE
-	if(arg>=Buffer.BufSize){
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE\n");
-		krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
-		Buffer.InIdx=(Buffer.OutIdx+nb_data)%arg; // si Buffer plein
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
-		Buffer.BufSize=(unsigned int)arg;
-	}
-
-	//DOWNSIZE
-	else{
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE\n");
-
-		//décalage des données
-		for(i=0;i<nb_data;i++){
-			Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
+		//Perte data (nb_data > new size) 		
+		if(nb_data>arg){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: too much in Buffer! nb_data>arg\n");
+			up(&SemBuf);
+			return -EAGAIN;
 		}
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, start=%d,end=%d \n",Buffer.OutIdx,(i+Buffer.OutIdx));
-		//replacement des index
-		Buffer.OutIdx=0;
-		Buffer.InIdx=nb_data;
-		Buffer.BufSize=arg;
-		kfree(&(Buffer.Buffer[arg]));
-		printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: INIT OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+	
+		//SUPERSIZE
+		if(arg>=Buffer.BufSize){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE\n");
+			krealloc(Buffer.Buffer,sizeof(BUF_DATA_TYPE)*arg,__GFP_NORETRY);
+			Buffer.InIdx=(Buffer.OutIdx+nb_data)%arg; // si Buffer plein
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: SUPERSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+			Buffer.BufSize=(unsigned int)arg;
+		}
+
+		//DOWNSIZE
+		else{
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE\n");
+
+			//décalage des données
+			for(i=0;i<nb_data;i++){
+				Buffer.Buffer[i]=Buffer.Buffer[i+Buffer.OutIdx];
+			}
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, start=%d,end=%d \n",Buffer.OutIdx,(i+Buffer.OutIdx));
+			//replacement des index
+			Buffer.OutIdx=0;
+			Buffer.InIdx=nb_data;
+			Buffer.BufSize=arg;
+			kfree(&(Buffer.Buffer[arg]));
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: DOWNSIZE, OutIdx=%d,InIdx=%d \n",Buffer.OutIdx,Buffer.InIdx);
+		}
+		up(&SemBuf);
+		return 1;
 	}
 
-	up(&SemBuf);
-	return 1;
+//Set_max_user
+	case SET_MAX_USER:{
+		printk(KERN_WARNING "Buffer_circulaire IOCTL: SetMaxUser, arg=%lu\n",arg);
+	
+	 	down_interruptible(&SemBDev);
+		if(BDev.numUser > arg){
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: SetMaxUser (error! arg=%lu)\n",arg);
+			up(&SemBDev);
+			return -EAGAIN;
+			}
+
+		else{
+			//put_user(BDev.maxUser,(int *)arg);
+			BDev.maxUser=arg;
+			printk(KERN_WARNING "Buffer_circulaire IOCTL: SetMaxUser = %d\n",BDev.maxUser);
+			up(&SemBDev);
+			return 1;
+		}
 	}
 	
 	default:{
