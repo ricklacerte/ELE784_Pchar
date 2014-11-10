@@ -64,31 +64,27 @@ static int __init buf_init(void){
 	sema_init(&SemReadBuf,1);
 
 //initialisation file d'attente
-	//DECLARE_WAIT_QUEUE_HEAD(READ_Queue);
 	init_waitqueue_head(&READ_Queue);
 	init_waitqueue_head(&WRITE_Queue);
 	init_waitqueue_head(&RELEASE_Queue);
-	
-
 	
 ///initialisation du BDev
 	cdev_init(&BDev.cdev, &Buf_fops);
 	BDev.cdev.owner = THIS_MODULE;
 	BDev.cdev.ops = &Buf_fops;
-	//sema_init(&BDev.SemBuf,1);
 	BDev.numWriter=0;
 	BDev.numReader=0;
 	BDev.numUser=0;
 	BDev.maxUser=MAX_USER;
 
 ///initialisation du BufStruct
-	Buffer.InIdx=0;//write
-	Buffer.OutIdx=0;//read
+	Buffer.InIdx=0;
+	Buffer.OutIdx=0;
 	Buffer.BufFull=0;
 	Buffer.BufEmpty=1;
 	Buffer.BufSize=DEFAULT_BUFSIZE;
 	Buffer.Buffer=(char *)kmalloc(DEFAULT_BUFSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
-//valider le malloc
+	//valider le malloc
 
 /// initialisation des buffers lecture et ecriture
 	BDev.WriteBuf=(char *) kmalloc(DEFAULT_RWSIZE*sizeof(BUF_DATA_TYPE),__GFP_NORETRY);
@@ -110,12 +106,10 @@ static void __exit buf_exit(void){
 	kfree(BDev.ReadBuf);
 
 //Désallocation du Device
-	//unregister_chrdev_region(BDev.dev,1);
 	cdev_del(&BDev.cdev);
 	device_destroy(BDev.mclass, BDev.dev);
 	class_destroy(BDev.mclass);
 	unregister_chrdev_region(BDev.dev, DEV_MINOR_STRT);
-
 	printk(KERN_WARNING "Buffer_circulaire EXIT: end\n");
 }
 
@@ -127,7 +121,7 @@ int buf_open(struct inode *inode, struct file *flip){
 	down_interruptible(&SemBDev);
 
 	flip->private_data=&BDev;
-		printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
+	printk(KERN_WARNING "Buffer_circulaire OPEN : capturer sem BDEV\n");
 
 //NOMBRE DE USERS
 	if(BDev.numUser>=BDev.maxUser)
@@ -144,7 +138,6 @@ int buf_open(struct inode *inode, struct file *flip){
 				}
 			}
 		}
-	
 
 //MODE DU USER
 	switch (flip->f_flags & O_ACCMODE){
@@ -189,15 +182,6 @@ int buf_open(struct inode *inode, struct file *flip){
 	return 0;
 }
 
-
-
-
-
-
-
-
-
-
 int buf_release(struct inode *inode, struct file *flip){
 	
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: Begin\n");
@@ -230,13 +214,6 @@ int buf_release(struct inode *inode, struct file *flip){
 	printk(KERN_WARNING "Buffer_circulaire RELEASE: end\n");	
 	return 0;
 }
-
-
-
-
-
-
-
 
 
 ssize_t buf_read(struct file *flip, char __user *ubuf, size_t count, loff_t *f_ops){ 
@@ -293,24 +270,26 @@ while((char_total + no_char)<count){
 			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK\n");
 
 			while(Buffer.BufEmpty==1){
-				//RELACHE
-				up(&SemReadBuf);
+				//RELACHE				
 				printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d)SLEEP, BufEmpty=%d, res=%d",current->comm,current->pid,Buffer.BufEmpty,res);
 				up(&SemBuf);
+				up(&SemReadBuf);
+
+				//SI Writer Bloquant attend
+				wake_up(&WRITE_Queue);
 
 				//GOOD NIGHT!
-				wait_event(READ_Queue,Buffer.BufEmpty==0); // sinon cat se fait réveiller par un signal...
+				wait_event(READ_Queue,Buffer.BufEmpty==0); 
 
 				//CAPTURE
-				down_interruptible(&SemReadBuf);//
+				down_interruptible(&SemReadBuf);
 				down_interruptible(&SemBuf);
 			}
 			printk(KERN_WARNING "Buffer_circulaire READ: BLOCK Task(PROP=%s PID= %d), res= %d, AWAKEN\n",current->comm,current->pid,res);	
-			no_char=-1;		//éliminer le no_char++; 
+			no_char=-1;		//éliminer le dernier no_char++; 
 			}
 	}
 	no_char++;
-	//printk(KERN_WARNING "Buffer_circulaire READ: no_char= %d, char=%c \n",no_char,BDev.ReadBuf[no_char]);
 }
 
 //restant READBuf-> user
@@ -343,7 +322,7 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	unsigned int char_write=0;
 	unsigned int char_miss=0;
 
-	int res;
+	int res =0;
 	int temp=0;
 	
 	int no_chaine=0;
@@ -356,17 +335,13 @@ ssize_t buf_write(struct file *flip, const char __user *ubuf, size_t count, loff
 	printk(KERN_WARNING "Buffer_circulaire WRITE: count= %d \n", count);
 
 //CAPTURE
-	down_interruptible(&SemWriteBuf); 	//test
-	down_interruptible(&SemBuf); 		//test
+	down_interruptible(&SemWriteBuf);
+	down_interruptible(&SemBuf);
 
 	nb_chaine=count/DEFAULT_RWSIZE;	//nb chaine totales
 	printk(KERN_WARNING "Buffer_circulaire WRITE: nb_chaine=%d \n", nb_chaine);
-		
+
 while(no_chaine<=nb_chaine && while_flag){
-	/*	Relache le buffer entre chaques chaines?? nécessaire?? a voir! 
-		(p-e intéressant pour éviter l'interblocage si READER = BLOCK et WRITER=BLOCK*/
-	//down_interruptible(&SemWriteBuf); 	
-	//down_interruptible(&SemBuf);
 
 //Nombres de CHARs à transférer pour ce no_chaine.
 	if(no_chaine<nb_chaine){
@@ -375,7 +350,6 @@ while(no_chaine<=nb_chaine && while_flag){
 	else{
 		nb_char=count%DEFAULT_RWSIZE; //derniere chaine
 	} 
-	//printk(KERN_WARNING "Buffer_circulaire WRITE: no_chaine=%d nb_char=%d \n", no_chaine,nb_char);
 
 //écriture dans WriteBuf
 	temp=no_chaine*DEFAULT_RWSIZE; 
@@ -387,10 +361,8 @@ while(no_chaine<=nb_chaine && while_flag){
 		char_write=0;
 		while(char_write<nb_char && while_flag)
 		{
-			//printk(KERN_WARNING "Buffer_circulaire WRITE: IN char_write= %d, char=%c \n",char_write,BDev.WriteBuf[char_write]);
-			//printk(KERN_WARNING "Buffer_circulaire WRITE: ecrit char %c dans WriteBuf \n",BDev.WriteBuf[char_write]);
 			res=BufIn(&Buffer,&(BDev.WriteBuf[char_write]));
-			if(res!=0)//0=OK, -1 = Full
+			if(res!=0)
 			{
 			//BUFFER = FULL
 			printk(KERN_WARNING "Buffer_circulaire WRITE: Buffer FULL! \n");
@@ -405,14 +377,18 @@ while(no_chaine<=nb_chaine && while_flag){
 				else
 				{
 					printk(KERN_WARNING "Buffer_circulaire WRITE: Bloquant \n");
+
+					while(Buffer.BufFull==1){					
 					up(&SemBuf);
 					up(&SemWriteBuf);
-				
+					
+					wake_up(&READ_Queue);
 					printk(KERN_WARNING "Buffer_circulaire WRITE: Task(PROP=%s PID= %d)SLEEP",current->comm,current->pid);
-					wait_event_interruptible(WRITE_Queue,Buffer.BufFull!=1); 
+					wait_event_interruptible(WRITE_Queue,Buffer.BufFull==0); 
 				
 					down_interruptible(&SemWriteBuf);
 					down_interruptible(&SemBuf);
+					}
 				}
 			}
 			char_write++;
@@ -445,9 +421,9 @@ while(no_chaine<=nb_chaine && while_flag){
 long buf_ioctl(struct file *flip, unsigned int cmd, unsigned long arg){
 /*Commande (cmd) :	1-> GetNumData
 					2-> GetNumReader
-					3->	GetBufSize
+					3-> GetBufSize
 					4-> SetBufSize
-					5-> 
+					5-> SetMaxUser
 */
 //Variables locales
 int nb_data;
@@ -455,7 +431,7 @@ int res;
 int i;
 
 printk(KERN_WARNING "Buffer_circulaire IOCTL: Begin cmd=%d\n",cmd);
-//Commandes
+
 switch (cmd){
 
 //GetNumData
@@ -473,7 +449,6 @@ switch (cmd){
 
 	up(&SemBuf);
 	res=put_user(nb_data,(int*)arg);
-	//res=copy_to_user(&arg,&nb_data,4);
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: data=%d, res=%d\n",nb_data,res);
 	return 1;
 	}
@@ -492,8 +467,6 @@ switch (cmd){
 //GetBufSize
 	case GET_BUF_SIZE:{
 	printk(KERN_WARNING "Buffer_circulaire IOCTL: GetBufSize\n");
-
-	/*Amélioration :peut-etre mettre un RWsem pour le BufSize -> beaucoup de lecture, peu d'écriture*/
 	down_interruptible(&SemBuf);
 	put_user(Buffer.BufSize,(int*)arg);
 	up(&SemBuf);
@@ -576,7 +549,6 @@ switch (cmd){
 			}
 
 		else{
-			//put_user(BDev.maxUser,(int *)arg);
 			BDev.maxUser=arg;
 			printk(KERN_WARNING "Buffer_circulaire IOCTL: SetMaxUser = %d\n",BDev.maxUser);
 			up(&SemBDev);
@@ -588,7 +560,6 @@ switch (cmd){
 	return -ENOTTY;	
 	}
 }
-
 
 	return 0;
 }
